@@ -13,19 +13,20 @@
 <body>
 <header class="site">
   <nav class="container">
-    <ul>
-      <li><a href="/admin" class="brand">freebuff-proxy <span class="brand-sub">admin</span></a>{{if .HasUpdate}}<a href="{{.UpdateURL}}" class="update-badge" title="new release available">update: {{.LatestVersion}}</a>{{end}}</li>
-    </ul>
-    <ul>
-      <li><a href="/admin" class="nav-link">Overview</a></li>
-      <li><a href="/admin/tokens" class="nav-link">Tokens</a></li>
-      <li><a href="/admin/models" class="nav-link">Models</a></li>
-      <li><a href="/admin/traces" class="nav-link">Traces</a></li>
-      <li><a href="/admin/playground" class="nav-link">Playground</a></li>
-      <li><a href="/admin/config" class="nav-link">Config</a></li>
-      <li><a href="/admin/setup" class="nav-link">Setup</a></li>
-      <li><a href="/admin/logs" class="nav-link">Logs</a></li>
-      <li><a href="/admin/metrics" class="nav-link">Metrics</a></li>
+    <div class="nav-brand-wrap">
+      <a href="/admin" class="brand">freebuff-proxy <span class="brand-sub">admin</span></a>
+      {{if .HasUpdate}}<a href="{{.UpdateURL}}" class="update-badge" title="new release available">update: {{.LatestVersion}}</a>{{end}}
+    </div>
+    <ul class="nav-menu">
+      <li><a href="/admin" class="nav-link{{if eq .Page "overview"}} active{{end}}">Overview</a></li>
+      <li><a href="/admin/tokens" class="nav-link{{if eq .Page "tokens"}} active{{end}}">Tokens</a></li>
+      <li><a href="/admin/models" class="nav-link{{if eq .Page "models"}} active{{end}}">Models</a></li>
+      <li><a href="/admin/traces" class="nav-link{{if eq .Page "traces"}} active{{end}}">Traces</a></li>
+      <li><a href="/admin/playground" class="nav-link{{if eq .Page "playground"}} active{{end}}">Playground</a></li>
+      <li><a href="/admin/config" class="nav-link{{if eq .Page "config"}} active{{end}}">Config</a></li>
+      <li><a href="/admin/setup" class="nav-link{{if eq .Page "setup"}} active{{end}}">Setup</a></li>
+      <li><a href="/admin/logs" class="nav-link{{if eq .Page "logs"}} active{{end}}">Logs</a></li>
+      <li><a href="/admin/metrics" class="nav-link{{if eq .Page "metrics"}} active{{end}}">Metrics</a></li>
     </ul>
   </nav>
   {{if .OpenBanner}}
