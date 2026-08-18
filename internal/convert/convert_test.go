@@ -2213,6 +2213,41 @@ func TestExtractXMLToolCalls(t *testing.T) {
 			t.Errorf("name = %q, want 'get_weather'", calls[0].Function.Name)
 		}
 	})
+	t.Run("fenced code block tool call", func(t *testing.T) {
+		raw := "I will list the directory:\n```tool_call\n{\"name\": \"bash\", \"arguments\": {\"command\": \"ls -la\"}}\n```"
+		cleaned, calls := extractXMLToolCalls(raw)
+		if cleaned != "I will list the directory:" {
+			t.Errorf("cleaned = %q, want 'I will list the directory:'", cleaned)
+		}
+		if len(calls) != 1 {
+			t.Fatalf("calls len = %d, want 1", len(calls))
+		}
+		if calls[0].Function.Name != "bash" {
+			t.Errorf("name = %q, want 'bash'", calls[0].Function.Name)
+		}
+	})
+}
+
+func TestAccumulatorReasoningToolCallFallback(t *testing.T) {
+	a := NewAccumulator()
+	line := `{"choices":[{"index":0,"delta":{"content":"","reasoning_content":"Thinking... I should run command:\n<tool_call>\n<function=bash>\n<parameter=command>pwd</parameter>\n</function>\n</tool_call>"}}]}`
+	if err := a.Add([]byte(line)); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	out := decode(t, a.Finish())
+	choice := out["choices"].([]any)[0].(map[string]any)
+	msg := choice["message"].(map[string]any)
+	if choice["finish_reason"] != "tool_calls" {
+		t.Errorf("finish_reason = %v, want 'tool_calls'", choice["finish_reason"])
+	}
+	calls, ok := msg["tool_calls"].([]any)
+	if !ok || len(calls) != 1 {
+		t.Fatalf("tool_calls = %v, want 1 tool call", msg["tool_calls"])
+	}
+	fn := calls[0].(map[string]any)["function"].(map[string]any)
+	if fn["name"] != "bash" {
+		t.Errorf("fn name = %v, want 'bash'", fn["name"])
+	}
 }
 
 func TestAccumulatorXMLToolCallFinish(t *testing.T) {

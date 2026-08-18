@@ -1674,7 +1674,8 @@ func (a *Accumulator) addToolCall(tc map[string]any) {
 //
 // or <tool_call>{"name":"...","arguments":{...}}</tool_call>
 var (
-	xmlToolCallBlockRe = regexp.MustCompile(`(?s)<tool_call>(.*?)</tool_call>|<function_call>(.*?)</function_call>`)
+	xmlToolCallBlockRe = regexp.MustCompile(`(?s)<tool_call>(.*?)</tool_call>|<function_call>(.*?)</function_call>|<\|?tool[_\-]?call[_\-]?start\|?>(.*?)<\|?tool[_\-]?call[_\-]?end\|?>`)
+	fencedToolCallRe   = regexp.MustCompile("(?s)```(?:json|tool_?call)?\\s*\\n?(\\{\\s*\"(?:name|function)\"\\s*:\\s*.*?\\})\\s*\\n?```")
 	xmlFunctionHeadRe  = regexp.MustCompile(`(?i)<function[=\s]+["']?([^>"\s]+)["']?>`)
 	xmlParamRe         = regexp.MustCompile(`(?s)<parameter[=\s]+["']?([^>"\s]+)["']?>(.*?)</parameter>|<param[=\s]+["']?([^>"\s]+)["']?>(.*?)</param>`)
 )
@@ -1684,11 +1685,14 @@ var (
 // It returns the cleaned content string and the extracted tool calls.
 func extractXMLToolCalls(content string) (string, []*toolCall) {
 	matches := xmlToolCallBlockRe.FindAllStringSubmatchIndex(content, -1)
-	if len(matches) == 0 {
+	fencedMatches := fencedToolCallRe.FindAllStringSubmatchIndex(content, -1)
+	if len(matches) == 0 && len(fencedMatches) == 0 {
 		return content, nil
 	}
 
 	var calls []*toolCall
+
+	// 1. Check XML block matches (<tool_call>...</tool_call>)
 	for _, loc := range matches {
 		block := content[loc[0]:loc[1]]
 		inner := xmlToolCallBlockRe.FindStringSubmatch(block)
@@ -1699,70 +1703,30 @@ func extractXMLToolCalls(content string) (string, []*toolCall) {
 		if raw == "" && len(inner) > 2 {
 			raw = inner[2]
 		}
+		if raw == "" && len(inner) > 3 {
+			raw = inner[3]
+		}
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			continue
 		}
 
-		// 1. Try parsing raw as direct JSON: {"name":"...", "arguments":{...}}
-		if strings.HasPrefix(raw, "{") && strings.HasSuffix(raw, "}") {
-			var jObj map[string]any
-			if err := json.Unmarshal([]byte(raw), &jObj); err == nil {
-				name, _ := jObj["name"].(string)
-				if name == "" {
-					name, _ = jObj["function"].(string)
-				}
-				if name != "" {
-					var argsStr string
-					if argsObj, ok := jObj["arguments"].(map[string]any); ok {
-						if b, err := json.Marshal(argsObj); err == nil {
-							argsStr = string(b)
-						}
-					} else if aStr, ok := jObj["arguments"].(string); ok {
-						argsStr = aStr
-					} else {
-						argsStr = "{}"
-					}
-					calls = append(calls, &toolCall{
-						ID:   "call_" + randHex(12),
-						Type: "function",
-						Function: toolFunction{
-							Name:      name,
-							Arguments: argsStr,
-						},
-					})
-					continue
-				}
-			}
+		if tc := parseToolCallRaw(raw); tc != nil {
+			calls = append(calls, tc)
 		}
+	}
 
-		// 2. Try parsing XML format: <function=NAME><parameter=KEY>VAL</parameter></function>
-		fnMatch := xmlFunctionHeadRe.FindStringSubmatch(raw)
-		if len(fnMatch) >= 2 {
-			fnName := strings.TrimSpace(fnMatch[1])
-			paramMatches := xmlParamRe.FindAllStringSubmatch(raw, -1)
-			argsMap := make(map[string]any)
-			for _, pm := range paramMatches {
-				pName := pm[1]
-				pVal := pm[2]
-				if pName == "" && len(pm) > 4 {
-					pName = pm[3]
-					pVal = pm[4]
+	// 2. Check fenced code blocks (```json {"name": "..."} ```)
+	if len(calls) == 0 {
+		for _, loc := range fencedMatches {
+			block := content[loc[0]:loc[1]]
+			inner := fencedToolCallRe.FindStringSubmatch(block)
+			if len(inner) >= 2 {
+				raw := strings.TrimSpace(inner[1])
+				if tc := parseToolCallRaw(raw); tc != nil {
+					calls = append(calls, tc)
 				}
-				pName = strings.TrimSpace(pName)
-				// Strip trailing corrupted syntax like `"{"command` if present
-				pVal = strings.TrimSpace(pVal)
-				argsMap[pName] = pVal
 			}
-			argsBytes, _ := json.Marshal(argsMap)
-			calls = append(calls, &toolCall{
-				ID:   "call_" + randHex(12),
-				Type: "function",
-				Function: toolFunction{
-					Name:      fnName,
-					Arguments: string(argsBytes),
-				},
-			})
 		}
 	}
 
@@ -1772,7 +1736,76 @@ func extractXMLToolCalls(content string) (string, []*toolCall) {
 
 	// Clean the tool_call blocks from content
 	cleaned := xmlToolCallBlockRe.ReplaceAllString(content, "")
+	cleaned = fencedToolCallRe.ReplaceAllString(cleaned, "")
 	return strings.TrimSpace(cleaned), calls
+}
+
+// parseToolCallRaw parses a single raw tool call string in either JSON or XML format.
+func parseToolCallRaw(raw string) *toolCall {
+	// Try direct JSON: {"name":"...", "arguments":{...}} or {"function":{...}}
+	if strings.HasPrefix(raw, "{") && strings.HasSuffix(raw, "}") {
+		var jObj map[string]any
+		if err := json.Unmarshal([]byte(raw), &jObj); err == nil {
+			name, _ := jObj["name"].(string)
+			if name == "" {
+				if fnObj, ok := jObj["function"].(map[string]any); ok {
+					name, _ = fnObj["name"].(string)
+				} else {
+					name, _ = jObj["function"].(string)
+				}
+			}
+			if name != "" {
+				var argsStr string
+				if argsObj, ok := jObj["arguments"].(map[string]any); ok {
+					if b, err := json.Marshal(argsObj); err == nil {
+						argsStr = string(b)
+					}
+				} else if aStr, ok := jObj["arguments"].(string); ok {
+					argsStr = aStr
+				} else {
+					argsStr = "{}"
+				}
+				return &toolCall{
+					ID:   "call_" + randHex(12),
+					Type: "function",
+					Function: toolFunction{
+						Name:      name,
+						Arguments: argsStr,
+					},
+				}
+			}
+		}
+	}
+
+	// Try XML format: <function=NAME><parameter=KEY>VAL</parameter></function>
+	fnMatch := xmlFunctionHeadRe.FindStringSubmatch(raw)
+	if len(fnMatch) >= 2 {
+		fnName := strings.TrimSpace(fnMatch[1])
+		paramMatches := xmlParamRe.FindAllStringSubmatch(raw, -1)
+		argsMap := make(map[string]any)
+		for _, pm := range paramMatches {
+			pName := pm[1]
+			pVal := pm[2]
+			if pName == "" && len(pm) > 4 {
+				pName = pm[3]
+				pVal = pm[4]
+			}
+			pName = strings.TrimSpace(pName)
+			pVal = strings.TrimSpace(pVal)
+			argsMap[pName] = pVal
+		}
+		argsBytes, _ := json.Marshal(argsMap)
+		return &toolCall{
+			ID:   "call_" + randHex(12),
+			Type: "function",
+			Function: toolFunction{
+				Name:      fnName,
+				Arguments: string(argsBytes),
+			},
+		}
+	}
+
+	return nil
 }
 
 // Finish returns the assembled chat.completion response as compact JSON:
@@ -1793,6 +1826,11 @@ func (a *Accumulator) Finish() []byte {
 	if len(a.toolCalls) == 0 {
 		var extracted []*toolCall
 		content, extracted = extractXMLToolCalls(content)
+		if len(extracted) == 0 && len(a.reasoningParts) > 0 {
+			// Fallback: model might have emitted tool_call inside reasoning_content (smallcode finding)
+			reasoningFull := strings.Join(a.reasoningParts, "")
+			_, extracted = extractXMLToolCalls(reasoningFull)
+		}
 		for idx, tc := range extracted {
 			a.toolCalls[idx] = tc
 		}
