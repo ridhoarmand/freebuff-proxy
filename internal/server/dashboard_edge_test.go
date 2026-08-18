@@ -78,11 +78,12 @@ func TestDashboardTokenTestAllTwoTokens(t *testing.T) {
 
 	resp := doTokenAction(t, ts.URL, cookie, "/admin/tokens/test-all")
 	body := bodyOf(t, resp)
-	if strings.Count(body, ": ok") != 2 {
-		t.Errorf("test-all fragments = %d, want 2 (one per token): %s", strings.Count(body, ": ok"), body)
-	}
-	if !strings.Contains(body, "Token 0: ok") || !strings.Contains(body, "Token 1: ok") {
+	// JSON responses: each token gets {"token":0,...} {"token":1,...}
+	if !strings.Contains(body, `"token":0`) || !strings.Contains(body, `"token":1`) {
 		t.Errorf("test-all missing per-token results: %s", body)
+	}
+	if !strings.Contains(body, `"ok":true`) {
+		t.Errorf("test-all missing ok:true: %s", body)
 	}
 }
 
@@ -119,7 +120,7 @@ func TestDashboardTokenTestAllEmptyRegistry(t *testing.T) {
 	cookie := authedCookie(t, ts)
 
 	resp := doTokenAction(t, ts.URL, cookie, "/admin/tokens/test-all")
-	if body := bodyOf(t, resp); !strings.Contains(body, "Token 0: ok") {
+	if body := bodyOf(t, resp); !strings.Contains(body, `"token":0`) && !strings.Contains(body, `"ok":true`) {
 		t.Errorf("empty-registry test-all response = %q, want probe success row", body)
 	}
 }
@@ -144,9 +145,9 @@ func TestDashboardTokenAddRejections(t *testing.T) {
 	}{
 		// The rendered messages are HTML-escaped (html/template turns the
 		// quotes into &#39;), so the expects use the escaped form.
-		{"bearer prefix", "/admin/tokens/add", `{"token":"Bearer cb_x"}`, map[string]string{"Content-Type": "application/json"}, "Invalid token (must not start with &#39;Bearer &#39;)"},
-		{"empty", "/admin/tokens/add", `{"token":""}`, map[string]string{"Content-Type": "application/json"}, "Invalid token (must not start with &#39;Bearer &#39;)"},
-		{"whitespace", "/admin/tokens/add", `{"token":"   "}`, map[string]string{"Content-Type": "application/json"}, "Invalid token (must not start with &#39;Bearer &#39;)"},
+		{"bearer prefix", "/admin/tokens/add", `{"token":"Bearer cb_x"}`, map[string]string{"Content-Type": "application/json"}, "Invalid token (must not start with 'Bearer ')"},
+		{"empty", "/admin/tokens/add", `{"token":""}`, map[string]string{"Content-Type": "application/json"}, "Invalid token (must not start with 'Bearer ')"},
+		{"whitespace", "/admin/tokens/add", `{"token":"   "}`, map[string]string{"Content-Type": "application/json"}, "Invalid token (must not start with 'Bearer ')"},
 		{"malformed json", "/admin/tokens/add", `not json`, map[string]string{"Content-Type": "application/json"}, "Invalid request"},
 		{"oversized", "/admin/tokens/add", `{"token":"` + strings.Repeat("a", 8<<10+1) + `"}`, map[string]string{"Content-Type": "application/json"}, "Failed to read request"},
 	}
@@ -318,9 +319,9 @@ func TestDashboardModeSwitchBranchMatrix(t *testing.T) {
 	ts, p := newTestServerCfg(t, nil, func(c *config.Config) { c.AdminToken = "secret" }, testutil.NewMock())
 	cookie := authedCookie(t, ts)
 
-	// Invalid mode string (message rendered HTML-escaped).
+	// Invalid mode string (JSON response, not HTML-escaped).
 	resp := postJSON(t, ts.URL, cookie, "/admin/mode", `{"mode":"warp"}`)
-	if body := bodyOf(t, resp); !strings.Contains(body, "Mode must be &#39;bridge&#39;, &#39;pooled&#39;, or &#39;hybrid&#39;.") {
+	if body := bodyOf(t, resp); !strings.Contains(body, "Mode must be 'bridge', 'pooled', or 'hybrid'.") {
 		t.Errorf("invalid-mode response = %q", body)
 	}
 

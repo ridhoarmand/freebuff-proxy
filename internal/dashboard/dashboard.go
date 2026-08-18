@@ -1,19 +1,15 @@
 // Package dashboard serves the embedded admin web UI: a single-binary,
-// htmx-driven control panel for the proxy (health, config, tokens, logs,
-// metrics). Static assets (htmx, pico, app.css) and templates are vendored
-// and embedded via go:embed — no runtime CDN, no node build step, and no
-// change to the distribution model.
-//
-// Every page handler renders either a full page (plain requests) or the bare
-// content fragment (htmx requests, detected via the HX-Request header), so
-// the same URL serves the initial load and the live-updating polls.
+// modern Svelte 5 + Tailwind control panel for the proxy (health, config, tokens, logs,
+// metrics). Static assets and templates are vendored and embedded via go:embed —
+// no runtime CDN, no runtime Node.js dependency, and zero external network calls.
 package dashboard
 
 import (
-	"bytes"
 	"embed"
+	"encoding/json"
 	"fmt"
-	"html/template"
+	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -32,13 +28,21 @@ import (
 	"freebuff-proxy/internal/updatecheck"
 )
 
-//go:embed assets templates
+//go:embed all:dist
 var files embed.FS
 
-// AssetsFS exposes the vendored static assets (htmx, pico, app.css) for the
-// server to mount under /admin/assets/. Embedded paths carry the "assets/"
-// prefix, so the server strips "/admin/" before serving.
-func AssetsFS() embed.FS { return files }
+// AssetsFS exposes the vendored static assets for the server to mount under /admin/assets/.
+func AssetsFS() embed.FS {
+	return files
+}
+
+// DistFS returns the embedded dist filesystem for SPA serving.
+func DistFS() fs.FS {
+	if sub, err := fs.Sub(files, "dist"); err == nil {
+		return sub
+	}
+	return files
+}
 
 // Dashboard renders the admin UI over the live pool, registry, and config.
 type Dashboard struct {
@@ -48,7 +52,6 @@ type Dashboard struct {
 	logger  *slog.Logger
 	logs    *logring.Handler // dashboard log viewer source (nil = disabled)
 	started time.Time
-	tpl     *template.Template
 
 	// version is the running release tag ("" / "dev" for dev builds) and
 	// updates is the release-update indicator (issue #50b); the layout
@@ -86,34 +89,11 @@ func New(cfg func() *config.Config, p *pool.Pool, reg *registry.Registry, logger
 	if logger == nil {
 		logger = slog.Default()
 	}
-	tpl, err := template.ParseFS(files, "templates/*.tmpl")
-	if err != nil {
-		panic("dashboard: embedded template parse failed: " + err.Error())
-	}
-	d := &Dashboard{cfg: cfg, pool: p, reg: reg, logger: logger, started: time.Now(), tpl: tpl, logs: logs}
+	d := &Dashboard{cfg: cfg, pool: p, reg: reg, logger: logger, started: time.Now(), logs: logs}
 	for _, opt := range opts {
 		opt(d)
 	}
 	return d
-}
-
-// layoutData carries the pre-rendered page body into the layout shell. The
-// body is template.HTML deliberately: it was produced by executing one of
-// our own escaped content templates, so no second escaping pass applies.
-// Page names the content template so the layout can mount the right htmx
-// poll for live pages (overview/logs/metrics). OpenBanner flags the
-// unauthenticated-remote dashboard warning (issue #46); UpdateBadge carries
-// the release-update indicator (issue #50b).
-type layoutData struct {
-	Body template.HTML
-	Page string
-
-	OpenBanner bool
-	// Update fields: only rendered when HasUpdate is true.
-	HasUpdate      bool
-	CurrentVersion string
-	LatestVersion  string
-	UpdateURL      string
 }
 
 // releaseURL is where the update badge points (the releases page).
@@ -143,80 +123,116 @@ func hostIsLoopback(host, listenAddr string) bool {
 	return false
 }
 
-// isHX reports whether the request came from htmx (fragment, not full page).
-func isHX(r *http.Request) bool { return r.Header.Get("HX-Request") == "true" }
+// wantsAPIJSON reports whether the client expects an API JSON response.
+func wantsAPIJSON(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	accept := r.Header.Get("Accept")
+	return strings.Contains(accept, "application/json") ||
+		r.Header.Get("X-Requested-With") == "fetch" ||
+		strings.HasPrefix(r.URL.Path, "/admin/api/")
+}
 
-// render executes content (as a bare fragment for htmx requests, or inside
-// the layout for plain navigation).
-func (d *Dashboard) render(w http.ResponseWriter, r *http.Request, content string, data any) {
+// pickDefaultModel selects deepseek/deepseek-v4-flash when present, or the first available model.
+func pickDefaultModel(models []string) string {
+	if len(models) == 0 {
+		return ""
+	}
+	const preferred = "deepseek/deepseek-v4-flash"
+	for _, m := range models {
+		if m == preferred {
+			return preferred
+		}
+	}
+	for _, m := range models {
+		if strings.Contains(m, "deepseek-v4-flash") {
+			return m
+		}
+	}
+	return models[0]
+}
+
+// ServeSPA serves the embedded single-page application and static assets from dist/.
+func (d *Dashboard) ServeSPA(w http.ResponseWriter, r *http.Request) {
+	dist, err := fs.Sub(files, "dist")
+	if err != nil {
+		http.Error(w, "SPA not available", http.StatusInternalServerError)
+		return
+	}
+
+	reqPath := strings.TrimPrefix(r.URL.Path, "/admin")
+	reqPath = strings.TrimPrefix(reqPath, "/")
+
+	if reqPath != "" && !strings.Contains(reqPath, "..") {
+		if f, err := dist.Open(reqPath); err == nil {
+			_ = f.Close()
+			http.FileServerFS(dist).ServeHTTP(w, r)
+			return
+		}
+	}
+
+	index, err := dist.Open("index.html")
+	if err != nil {
+		http.Error(w, "SPA index not available", http.StatusInternalServerError)
+		return
+	}
+	defer func() { _ = index.Close() }()
+
+	stat, err := index.Stat()
+	if err != nil {
+		http.Error(w, "SPA index not available", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if isHX(r) {
-		if err := d.tpl.ExecuteTemplate(w, content, data); err != nil {
-			d.logger.Error("dashboard fragment render failed", "template", content, "err", err)
-		}
-		return
-	}
-	var buf bytes.Buffer
-	if err := d.tpl.ExecuteTemplate(&buf, content, data); err != nil {
-		d.logger.Error("dashboard page render failed", "template", content, "err", err)
-		return
-	}
-	ld := layoutData{Body: template.HTML(buf.String()), Page: content}
-	cfg := d.cfg()
-	// Issue #46: with ADMIN_TOKEN unset, a request whose Host is not a
-	// loopback name reaches an OPEN dashboard — show a banner recommending
-	// ADMIN_TOKEN (and linking the config page).
-	ld.OpenBanner = cfg.AdminToken == "" && !hostIsLoopback(r.Host, cfg.ListenAddr)
-	// Issue #50b: release update badge — non-blocking (3s fetch bound,
-	// 6h in-memory cache; failures render no badge).
-	if d.version != "" && d.updates != nil && r.Context() != nil {
-		if latest, err := d.updates.Latest(r.Context()); err == nil && latest != "" && updatecheck.UpdateAvailable(d.version, latest) {
-			ld.HasUpdate = true
-			ld.CurrentVersion = d.version
-			ld.LatestVersion = latest
-			ld.UpdateURL = releaseURL
-		}
-	}
-	if err := d.tpl.ExecuteTemplate(w, "layout", ld); err != nil {
-		d.logger.Error("dashboard layout render failed", "err", err)
+	http.ServeContent(w, r, "index.html", stat.ModTime(), index.(io.ReadSeeker))
+}
+
+// APIHandler returns a handler that writes the named view model as JSON.
+func (d *Dashboard) APIHandler(name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		data := d.dataFor(name, r)
+		_ = json.NewEncoder(w).Encode(data)
 	}
 }
 
-// Page returns a handler for the named content template, wired to its data.
-func (d *Dashboard) Page(name string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		d.render(w, r, name, d.dataFor(name, r))
+// APIVersion returns the running version and update check result as JSON.
+func (d *Dashboard) APIVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	resp := map[string]any{
+		"current_version": d.version,
+		"has_update":      false,
+		"latest_version":  "",
+		"update_url":      releaseURL,
 	}
+	if d.version != "" && d.updates != nil && r.Context() != nil {
+		if latest, err := d.updates.Latest(r.Context()); err == nil && latest != "" && updatecheck.UpdateAvailable(d.version, latest) {
+			resp["has_update"] = true
+			resp["latest_version"] = latest
+		}
+	}
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // RenderLogin renders the login page with an optional error message.
 func (d *Dashboard) RenderLogin(w http.ResponseWriter, r *http.Request, errMsg string) {
-	d.render(w, r, "login", loginData{Error: errMsg})
+	w.Header().Set("Content-Type", "application/json")
+	if errMsg != "" {
+		w.WriteHeader(http.StatusUnauthorized)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": errMsg})
 }
 
-// RenderRestricted renders the styled access-denied page (the loopback gate
-// and sensitive routes use it so blocked pages never look broken).
+// RenderRestricted renders the access-denied page as JSON.
 func (d *Dashboard) RenderRestricted(w http.ResponseWriter, r *http.Request, msg string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if isHX(r) {
-		// htmx polls get a small fragment, not a full page.
-		_, _ = w.Write([]byte("<p class=\"result result-err\" role=\"status\">" + template.HTMLEscapeString(msg) + "</p>"))
-		return
-	}
-	var buf bytes.Buffer
-	if err := d.tpl.ExecuteTemplate(&buf, "restricted", loginData{Error: msg}); err != nil {
-		d.logger.Error("dashboard restricted render failed", "err", err)
-		http.Error(w, msg, http.StatusForbidden)
-		return
-	}
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
-	if err := d.tpl.ExecuteTemplate(w, "layout", layoutData{Body: template.HTML(buf.String()), Page: "restricted"}); err != nil {
-		d.logger.Error("dashboard restricted layout failed", "err", err)
-	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": msg})
 }
 
-// dataFor resolves the page data for a named content template. r carries the
-// query params consumed by the filtered pages (logs).
+// dataFor resolves the page data for a named content template.
 func (d *Dashboard) dataFor(name string, r *http.Request) any {
 	switch name {
 	case "overview":
@@ -242,15 +258,13 @@ func (d *Dashboard) dataFor(name string, r *http.Request) any {
 	}
 }
 
-// --- playground (issue #45) ---
+// --- playground ---
 
-// playgroundData feeds the interactive chat playground: the registry model
-// list (pre-selected first model) and the routing mode hint.
 type playgroundData struct {
-	Models    []string
-	Model     string
-	HasModels bool
-	Mode      string
+	Models    []string `json:"models"`
+	Model     string   `json:"model"`
+	HasModels bool     `json:"has_models"`
+	Mode      string   `json:"mode"`
 }
 
 func (d *Dashboard) playgroundData() playgroundData {
@@ -258,7 +272,7 @@ func (d *Dashboard) playgroundData() playgroundData {
 	pd := playgroundData{Models: models, Mode: d.cfg().EffectiveMode()}
 	pd.HasModels = len(models) > 0
 	if pd.HasModels {
-		pd.Model = models[0]
+		pd.Model = pickDefaultModel(models)
 	}
 	return pd
 }
@@ -266,23 +280,18 @@ func (d *Dashboard) playgroundData() playgroundData {
 // --- logs ---
 
 type logsData struct {
-	Enabled bool
-	// Level/Msg echo the active filters so the template keeps the controls
-	// in sync when a filtered fragment re-renders (hx-get targets the same
-	// #logs-root region).
-	Level string
-	Msg   string
-	// HasFilter reports whether a filter is active (drives the empty-state
-	// copy: "no matching records" vs "no records yet").
-	HasFilter bool
-	Entries   []logEntry
+	Enabled   bool       `json:"enabled"`
+	Level     string     `json:"level"`
+	Msg       string     `json:"msg"`
+	HasFilter bool       `json:"has_filter"`
+	Entries   []logEntry `json:"entries"`
 }
 
 type logEntry struct {
-	Time    string
-	Level   string
-	Message string
-	Fields  string
+	Time    string `json:"time"`
+	Level   string `json:"level"`
+	Message string `json:"message"`
+	Fields  string `json:"fields"`
 }
 
 func (d *Dashboard) logsData(r *http.Request) logsData {
@@ -290,17 +299,17 @@ func (d *Dashboard) logsData(r *http.Request) logsData {
 	if d.logs == nil {
 		return ld
 	}
-	level := strings.TrimSpace(r.URL.Query().Get("level"))
-	msg := strings.TrimSpace(r.URL.Query().Get("msg"))
-	// Echo the level lowercased so the select's option comparison (exact
-	// match) stays in sync even when the client passes "WARN" or "Info".
+	level := ""
+	msg := ""
+	if r != nil && r.URL != nil {
+		level = strings.TrimSpace(r.URL.Query().Get("level"))
+		msg = strings.TrimSpace(r.URL.Query().Get("msg"))
+	}
 	ld.Level = strings.ToLower(level)
 	ld.Msg = msg
 	ld.HasFilter = level != "" || msg != ""
 	msgLower := strings.ToLower(msg)
 	for _, e := range d.logs.Recent(200) {
-		// level matches exactly (INFO/WARN/... case-insensitive); msg is a
-		// case-insensitive substring of the message.
 		if level != "" && !strings.EqualFold(e.Level, level) {
 			continue
 		}
@@ -319,9 +328,6 @@ func (d *Dashboard) logsData(r *http.Request) logsData {
 
 // --- metrics ---
 
-// metricSample is one point of the in-dashboard counter history, sampled on
-// every metrics-page render (the page polls every 5s, so sampling is driven
-// by the UI, not a background goroutine).
 type metricSample struct {
 	Requests int64
 	Retries  int64
@@ -331,13 +337,13 @@ type metricSample struct {
 const maxMetricSamples = 120
 
 type metricsData struct {
-	TransientRetries     int64
-	FingerprintRotations int64
-	RequestsTotal        int64
-	Models               int
-	SampleCount          int
-	RequestsSpark        template.HTML
-	RetriesSpark         template.HTML
+	TransientRetries     int64  `json:"transient_retries"`
+	FingerprintRotations int64  `json:"fingerprint_rotations"`
+	RequestsTotal        int64  `json:"requests_total"`
+	Models               int    `json:"models"`
+	SampleCount          int    `json:"sample_count"`
+	RequestsSpark        string `json:"requests_spark"`
+	RetriesSpark         string `json:"retries_spark"`
 }
 
 func (d *Dashboard) metricsData() metricsData {
@@ -369,13 +375,10 @@ func (d *Dashboard) metricsData() metricsData {
 	return md
 }
 
-// sparklineSVG renders a normalized polyline sparkline. Values are scaled to
-// the chart height (flat when constant or empty). color is an internal CSS
-// variable literal; label is the accessible name.
-func sparklineSVG(values []float64, color, label string) template.HTML {
+func sparklineSVG(values []float64, color, label string) string {
 	const w, h = 260, 44
 	if len(values) < 2 {
-		return template.HTML(`<svg viewBox="0 0 ` + strconv.Itoa(w) + ` ` + strconv.Itoa(h) + `" role="img" aria-label="` + label + `"><polyline points="0,` + strconv.Itoa(h-2) + ` ` + strconv.Itoa(w) + `,` + strconv.Itoa(h-2) + `" fill="none" stroke="` + color + `" stroke-width="1.5"/></svg>`)
+		return `<svg viewBox="0 0 ` + strconv.Itoa(w) + ` ` + strconv.Itoa(h) + `" role="img" aria-label="` + label + `"><polyline points="0,` + strconv.Itoa(h-2) + ` ` + strconv.Itoa(w) + `,` + strconv.Itoa(h-2) + `" fill="none" stroke="` + color + `" stroke-width="1.5"/></svg>`
 	}
 	min, max := values[0], values[0]
 	for _, v := range values[1:] {
@@ -401,50 +404,42 @@ func sparklineSVG(values []float64, color, label string) template.HTML {
 		sb.WriteString(strconv.FormatFloat(x, 'f', 1, 64) + "," + strconv.FormatFloat(y, 'f', 1, 64))
 	}
 	sb.WriteString(`" fill="none" stroke="` + color + `" stroke-width="1.5"/></svg>`)
-	return template.HTML(sb.String())
+	return sb.String()
 }
 
 // --- tokens ---
 
 type tokensData struct {
-	Mode         string // "bridge" | "pooled" | "hybrid"
-	InBridge     bool   // tokens page shows the bridge card only in pure bridge
-	BridgeTokens int
-	TokenCount   int
-	Tokens       []tokenDetail
-	HasTokens    bool
+	Mode         string        `json:"mode"`
+	InBridge     bool          `json:"in_bridge"`
+	BridgeTokens int           `json:"bridge_tokens"`
+	TokenCount   int           `json:"token_count"`
+	Tokens       []tokenDetail `json:"tokens"`
+	HasTokens    bool          `json:"has_tokens"`
 }
 
-// tokenDetail is the full per-token view: the overview card fields plus the
-// live per-model session quota table.
 type tokenDetail struct {
 	tokenCard
-	SessionInstance string
-	Quota           []quotaRow
-	HasQuota        bool
+	SessionInstance string     `json:"session_instance"`
+	Quota           []quotaRow `json:"quota"`
+	HasQuota        bool       `json:"has_quota"`
 }
 
 type quotaRow struct {
-	Model          string
-	Limit          string
-	Recent         string
-	Period         string
-	ResetAt        string
-	ResetAtUTC     string // RFC3339 UTC for the browser-local formatter (#50a)
-	ResetsIn       string // e.g. "in 4h 12m" (empty when no reset time)
-	Entitled       string
-	HasEntitlement bool
-	UsagePct       int // recent/limit, clamped to 100 (0 when limit is 0)
-	NearLimit      bool
-	// HasBar reports whether the quota usage bar should render. Limit/Recent
-	// are pre-formatted strings (formatQuota), so templates cannot compare
-	// them numerically — the numeric decision lives here.
-	HasBar bool
+	Model          string `json:"model"`
+	Limit          string `json:"limit"`
+	Recent         string `json:"recent"`
+	Period         string `json:"period"`
+	ResetAt        string `json:"reset_at"`
+	ResetAtUTC     string `json:"reset_at_utc"`
+	ResetsIn       string `json:"resets_in"`
+	Entitled       string `json:"entitled"`
+	HasEntitlement bool   `json:"has_entitlement"`
+	UsagePct       int    `json:"usage_pct"`
+	NearLimit      bool   `json:"near_limit"`
+	HasBar         bool   `json:"has_bar"`
 }
 
-// utcAttr renders a time as an RFC3339 UTC string for the data-utc
-// attribute the browser-local formatter reads (issue #50a). Zero times
-// render "".
 func utcAttr(t time.Time) string {
 	if t.IsZero() {
 		return ""
@@ -500,21 +495,21 @@ func (d *Dashboard) tokensData() tokensData {
 // --- models ---
 
 type modelsData struct {
-	Models     []modelRow
-	Count      int
-	Agents     int
-	Aliases    []aliasRow
-	HasAliases bool
+	Models     []modelRow `json:"models"`
+	Count      int        `json:"count"`
+	Agents     int        `json:"agents"`
+	Aliases    []aliasRow `json:"aliases"`
+	HasAliases bool       `json:"has_aliases"`
 }
 
 type modelRow struct {
-	ID    string
-	Agent string
+	ID    string `json:"id"`
+	Agent string `json:"agent"`
 }
 
 type aliasRow struct {
-	Alias string
-	Real  string
+	Alias string `json:"alias"`
+	Real  string `json:"real"`
 }
 
 func (d *Dashboard) modelsData() modelsData {
@@ -537,20 +532,18 @@ func (d *Dashboard) modelsData() modelsData {
 
 // --- traces ---
 
-// tracesData renders the chat-trace ring: recent chat completions and their
-// routing outcome (token, model, status, duration, error class).
 type tracesData struct {
-	Enabled bool
-	Traces  []traceEntry
+	Enabled bool         `json:"enabled"`
+	Traces  []traceEntry `json:"traces"`
 }
 
 type traceEntry struct {
-	Time   string
-	Token  string
-	Model  string
-	Status string
-	Ms     string
-	Error  string
+	Time   string `json:"time"`
+	Token  string `json:"token"`
+	Model  string `json:"model"`
+	Status string `json:"status"`
+	Ms     string `json:"ms"`
+	Error  string `json:"error"`
 }
 
 func (d *Dashboard) tracesData() tracesData {
@@ -591,18 +584,16 @@ func (d *Dashboard) tracesData() tracesData {
 
 // --- client setup ---
 
-// setupData renders copy-paste client configuration snippets from the
-// effective config (mirrors the -setup command's shapes).
 type setupData struct {
-	BaseURL      string
-	KeyHint      string
-	Model        string
-	Models       []string
-	Mode         string // "bridge" | "pooled" | "hybrid"
-	Bridge       bool
-	BridgeTokens int
-	TokenCount   int
-	HasTokens    bool
+	BaseURL      string   `json:"base_url"`
+	KeyHint      string   `json:"key_hint"`
+	Model        string   `json:"model"`
+	Models       []string `json:"models"`
+	Mode         string   `json:"mode"`
+	Bridge       bool     `json:"bridge"`
+	BridgeTokens int      `json:"bridge_tokens"`
+	TokenCount   int      `json:"token_count"`
+	HasTokens    bool     `json:"has_tokens"`
 }
 
 func (d *Dashboard) setupData() setupData {
@@ -622,7 +613,7 @@ func (d *Dashboard) setupData() setupData {
 	}
 	sd.HasTokens = sd.TokenCount > 0
 	if len(sd.Models) > 0 {
-		sd.Model = sd.Models[0]
+		sd.Model = pickDefaultModel(sd.Models)
 	}
 	switch mode {
 	case "bridge":
@@ -635,8 +626,6 @@ func (d *Dashboard) setupData() setupData {
 	return sd
 }
 
-// cardFromSnapshot maps one pool snapshot into the shared token-card view
-// (overview cards and the tokens-detail header use the same fields).
 func cardFromSnapshot(t pool.TokenSnapshot) tokenCard {
 	card := tokenCard{
 		Index:            t.Token,
@@ -655,9 +644,6 @@ func cardFromSnapshot(t pool.TokenSnapshot) tokenCard {
 		card.CooldownActive = true
 		card.CooldownUntil = t.CooldownUntil.Format(time.RFC3339)
 	}
-	// Account standing (issue #96): the upstream pre-join "standing" block,
-	// surfaced next to the risk card. HasStanding keeps the template clean
-	// when the session response omitted it (feature off / compact polls).
 	if t.Standing != nil {
 		card.HasStanding = true
 		card.StandingLevel = t.Standing.Level
@@ -671,7 +657,6 @@ func cardFromSnapshot(t pool.TokenSnapshot) tokenCard {
 	return card
 }
 
-// shortID renders a session instance id's first 8 chars for identification.
 func shortID(id string) string {
 	if len(id) > 8 {
 		return id[:8] + "…"
@@ -679,7 +664,6 @@ func shortID(id string) string {
 	return id
 }
 
-// formatQuota renders quota numbers without float noise ("5" not "5.0000").
 func formatQuota(v float64) string {
 	if v == float64(int64(v)) {
 		return strconv.FormatInt(int64(v), 10)
@@ -707,9 +691,6 @@ func shortTime(t time.Time) string {
 	return t.Format("15:04 Jan 2")
 }
 
-// humanDuration renders a duration compactly for countdowns: "4h 12m",
-// "45m", "30s". Sub-minute values round up to "1m" so countdowns never
-// show a false "0s" while a quota is still active.
 func humanDuration(d time.Duration) string {
 	d = d.Round(time.Minute)
 	if d < time.Minute {
@@ -727,29 +708,33 @@ func humanDuration(d time.Duration) string {
 	}
 }
 
-// RenderConfigResult renders the htmx response fragment after a config save
-// attempt (success or validation failure).
+// RenderConfigResult renders the response after a config save or token action.
 func (d *Dashboard) RenderConfigResult(w http.ResponseWriter, r *http.Request, ok bool, message string) {
-	d.render(w, r, "config_result", configResultData{OK: ok, Message: message})
+	w.Header().Set("Content-Type", "application/json")
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": ok, "message": message})
 }
 
-// RenderTestResult appends one per-token outcome to the test-all results
-// area (one fragment per token, appended with hx-swap-oob semantics).
+// RenderTestResult appends one per-token outcome.
 func (d *Dashboard) RenderTestResult(w http.ResponseWriter, r *http.Request, token int, ok bool, message, instanceID string) {
-	d.render(w, r, "test_result", testResultData{
-		Token: token, OK: ok, Message: message, InstanceID: shortID(instanceID),
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"token":       token,
+		"ok":          ok,
+		"message":     message,
+		"instance_id": shortID(instanceID),
 	})
 }
 
-// PhaseKV is one rendered latency phase (name + ms) on the smoke result.
+// PhaseKV is one rendered latency phase.
 type PhaseKV struct {
-	Name string
-	Ms   int64
+	Name string `json:"name"`
+	Ms   int64  `json:"ms"`
 }
 
-// PhaseList orders a phase map for rendering (acquire → session/run →
-// ttfb → total, skipping absent phases) so the smoke result and traces read
-// the phases in the order the request actually experienced them.
+// PhaseList orders a phase map for rendering.
 func PhaseList(phases map[string]int64) []PhaseKV {
 	order := []string{
 		phasetiming.AcquireMS,
@@ -767,108 +752,112 @@ func PhaseList(phases map[string]int64) []PhaseKV {
 	return out
 }
 
-// RenderSmokeResult renders the smoke-test outcome fragment. phases are the
-// per-request latency phases (#89), rendered in stable order.
+// RenderSmokeResult renders the smoke-test outcome.
 func (d *Dashboard) RenderSmokeResult(w http.ResponseWriter, r *http.Request, model, token string, ms int64, preview []byte, phases []PhaseKV) {
-	d.render(w, r, "smoke_result", smokeResultData{
-		Model: model, Token: token, Ms: ms, Preview: string(preview), Phases: phases,
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":      true,
+		"model":   model,
+		"token":   token,
+		"ms":      ms,
+		"preview": string(preview),
+		"phases":  phases,
 	})
 }
 
-// RenderDiag renders the diagnostics results fragment.
 func (d *Dashboard) RenderDiag(w http.ResponseWriter, r *http.Request, checks []DiagCheck) {
-	d.render(w, r, "diag_result", diagData{Checks: checks})
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"checks": checks})
 }
 
 // --- overview ---
 
 type overviewData struct {
-	Mode                 string // "bridge" | "pooled" | "hybrid"
-	InBridge             bool
-	BridgeTokens         int
-	Models               []string
-	ModelCount           int
-	Uptime               string
-	SafeMode             bool
-	MaxMessagesPerDay    int
-	TransientRetries     int64
-	FingerprintRotations int64
-	Tokens               []tokenCard
-	HasTokens            bool
+	Mode                 string      `json:"mode"`
+	InBridge             bool        `json:"in_bridge"`
+	BridgeTokens         int         `json:"bridge_tokens"`
+	Models               []string    `json:"models"`
+	ModelCount           int         `json:"model_count"`
+	Uptime               string      `json:"uptime"`
+	SafeMode             bool        `json:"safe_mode"`
+	MaxMessagesPerDay    int         `json:"max_messages_per_day"`
+	TransientRetries     int64       `json:"transient_retries"`
+	FingerprintRotations int64       `json:"fingerprint_rotations"`
+	Tokens               []tokenCard `json:"tokens"`
+	HasTokens            bool        `json:"has_tokens"`
 }
 
 type tokenCard struct {
-	Index            int
-	SessionStatus    string
-	QueuePosition    int
-	QueueDepth       int
-	ActiveRuns       int
-	Requests         int
-	Messages24h      int
-	DailyLimit       int
-	UsagePct         int
-	RiskLevel        string
-	CooldownActive   bool
-	CooldownUntil    string
-	TransientRetries int64
-	// Standing (issue #96): the upstream account access level, shown next
-	// to the risk card. HasStanding is false when the session response
-	// omitted the block.
-	HasStanding         bool
-	StandingLevel       string
-	StandingLabel       string
-	StandingScore       float64
-	StandingNextLevel   string
-	StandingNextLevelAt string
+	Index            int     `json:"index"`
+	SessionStatus    string  `json:"session_status"`
+	QueuePosition    int     `json:"queue_position"`
+	QueueDepth       int     `json:"queue_depth"`
+	ActiveRuns       int     `json:"active_runs"`
+	Requests         int     `json:"requests"`
+	Messages24h      int     `json:"messages_24h"`
+	DailyLimit       int     `json:"daily_limit"`
+	UsagePct         int     `json:"usage_pct"`
+	RiskLevel        string  `json:"risk_level"`
+	CooldownActive   bool    `json:"cooldown_active"`
+	CooldownUntil    string  `json:"cooldown_until"`
+	TransientRetries int64   `json:"transient_retries"`
+	HasStanding         bool    `json:"has_standing"`
+	StandingLevel       string  `json:"standing_level"`
+	StandingLabel       string  `json:"standing_label"`
+	StandingScore       float64 `json:"standing_score"`
+	StandingNextLevel   string  `json:"standing_next_level"`
+	StandingNextLevelAt string  `json:"standing_next_level_at"`
 }
 
 type loginData struct {
-	Error string
+	Error string `json:"error"`
 }
 
-// --- config editor ---
+type restrictedData struct {
+	Error string `json:"error"`
+}
 
 type configData struct {
-	EnvContent string     // current .env text (or a commented template)
-	HasEnvFile bool       // whether ./.env existed on disk
-	Effective  []configKV // effective values, secrets redacted
+	EnvContent string     `json:"env_content"`
+	HasEnvFile bool       `json:"has_env_file"`
+	Effective  []configKV `json:"effective"`
 }
 
 type configKV struct {
-	Key    string
-	Value  string
-	Secret bool // rendered as a redacted summary, never the raw value
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Secret bool   `json:"secret"`
 }
 
 type configResultData struct {
-	OK      bool
-	Message string
+	OK      bool   `json:"ok"`
+	Message string `json:"message"`
 }
 
 type testResultData struct {
-	Token      int
-	OK         bool
-	Message    string
-	InstanceID string
+	Token      int    `json:"token"`
+	OK         bool   `json:"ok"`
+	Message    string `json:"message"`
+	InstanceID string `json:"instance_id"`
 }
 
 type smokeResultData struct {
-	Model   string
-	Token   string
-	Ms      int64
-	Preview string
-	Phases  []PhaseKV
+	Model   string    `json:"model"`
+	Token   string    `json:"token"`
+	Ms      int64     `json:"ms"`
+	Preview string    `json:"preview"`
+	Phases  []PhaseKV `json:"phases"`
 }
 
-// DiagCheck is one diagnostics row (mirrors -doctor's pass/warn/fail model).
 type DiagCheck struct {
-	OK      bool
-	Warn    bool
-	Message string
+	Name    string `json:"name"`
+	OK      bool   `json:"ok"`
+	Warn    bool   `json:"warn"`
+	Message string `json:"message"`
 }
 
 type diagData struct {
-	Checks []DiagCheck
+	Checks []DiagCheck `json:"checks"`
 }
 
 func (d *Dashboard) configData() configData {
@@ -914,8 +903,6 @@ func boolWord(v bool) string {
 	return "unset"
 }
 
-// defaultEnvTemplate seeds the editor when no ./.env file exists yet. Values
-// mirror the loader defaults; uncomment and edit what you need.
 const defaultEnvTemplate = `# freebuff-proxy configuration (.env)
 # Keys mirror the environment variables; leave commented to keep the default.
 # See the README and docs/guides for the full reference.

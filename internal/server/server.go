@@ -209,18 +209,31 @@ func (s *Server) Handler() http.Handler {
 	// lock the victim out of the dashboard (5 fails → 1-minute lockout,
 	// repeatable). GET stays unwrapped — it just renders the login page.
 	mux.HandleFunc("POST /admin/login", s.adminCSRF(http.HandlerFunc(s.handleAdminLogin)))
-	mux.Handle("GET /admin", s.dashboardAuth(s.dash.Page("overview")))
-	mux.Handle("GET /admin/tokens", s.dashboardAuth(s.dash.Page("tokens")))
-	mux.Handle("GET /admin/models", s.dashboardAuth(s.dash.Page("models")))
-	mux.Handle("GET /admin/traces", s.dashboardAuth(s.dash.Page("traces")))
-	mux.Handle("GET /admin/setup", s.dashboardAuth(s.dash.Page("setup")))
-	mux.Handle("GET /admin/playground", s.dashboardAuth(s.dash.Page("playground")))
+	// Admin dashboard API routes (JSON)
+	mux.Handle("GET /admin/api/overview", s.dashboardAuth(s.dash.APIHandler("overview")))
+	mux.Handle("GET /admin/api/tokens", s.dashboardAuth(s.dash.APIHandler("tokens")))
+	mux.Handle("GET /admin/api/models", s.dashboardAuth(s.dash.APIHandler("models")))
+	mux.Handle("GET /admin/api/traces", s.dashboardAuth(s.dash.APIHandler("traces")))
+	mux.Handle("GET /admin/api/setup", s.dashboardAuth(s.dash.APIHandler("setup")))
+	mux.Handle("GET /admin/api/config", s.dashboardAuth(s.adminSensitive(s.dash.APIHandler("config"))))
+	mux.Handle("GET /admin/api/logs", s.dashboardAuth(s.adminSensitive(s.dash.APIHandler("logs"))))
+	mux.Handle("GET /admin/api/metrics", s.dashboardAuth(s.dash.APIHandler("metrics")))
+	mux.Handle("GET /admin/api/version", s.dashboardAuth(http.HandlerFunc(s.dash.APIVersion)))
+
+	// SPA: all admin/* GET routes serve the embedded Svelte SPA
+	mux.Handle("GET /admin", s.dashboardAuth(http.HandlerFunc(s.dash.ServeSPA)))
+	mux.Handle("GET /admin/", s.dashboardAuth(http.HandlerFunc(s.dash.ServeSPA)))
+	mux.Handle("GET /admin/tokens", s.dashboardAuth(http.HandlerFunc(s.dash.ServeSPA)))
+	mux.Handle("GET /admin/models", s.dashboardAuth(http.HandlerFunc(s.dash.ServeSPA)))
+	mux.Handle("GET /admin/traces", s.dashboardAuth(http.HandlerFunc(s.dash.ServeSPA)))
+	mux.Handle("GET /admin/setup", s.dashboardAuth(http.HandlerFunc(s.dash.ServeSPA)))
+	mux.Handle("GET /admin/playground", s.dashboardAuth(http.HandlerFunc(s.dash.ServeSPA)))
+	mux.Handle("GET /admin/config", s.dashboardAuth(s.adminSensitive(http.HandlerFunc(s.dash.ServeSPA))))
+	mux.Handle("GET /admin/logs", s.dashboardAuth(s.adminSensitive(http.HandlerFunc(s.dash.ServeSPA))))
+	mux.Handle("GET /admin/metrics", s.dashboardAuth(http.HandlerFunc(s.dash.ServeSPA)))
 	mux.Handle("POST /admin/playground/chat", s.dashboardAuth(s.adminSensitive(s.adminCSRF(http.HandlerFunc(s.handlePlaygroundChat)))))
 	mux.Handle("POST /admin/login/start", s.dashboardAuth(s.adminSensitive(s.adminCSRF(http.HandlerFunc(s.handleLoginStart)))))
 	mux.Handle("GET /admin/login/status", s.dashboardAuth(s.adminSensitive(http.HandlerFunc(s.handleLoginStatus))))
-	mux.Handle("GET /admin/config", s.dashboardAuth(s.adminSensitive(s.dash.Page("config"))))
-	mux.Handle("GET /admin/logs", s.dashboardAuth(s.adminSensitive(s.dash.Page("logs"))))
-	mux.Handle("GET /admin/metrics", s.dashboardAuth(s.dash.Page("metrics")))
 	mux.Handle("POST /admin/config", s.dashboardAuth(s.adminSensitive(s.adminCSRF(http.HandlerFunc(s.handleConfigSave)))))
 	mux.Handle("POST /admin/tokens/{id}/unlock", s.dashboardAuth(s.adminSensitive(s.adminCSRF(http.HandlerFunc(s.handleTokenUnlock)))))
 	mux.Handle("POST /admin/tokens/{id}/finish", s.dashboardAuth(s.adminSensitive(s.adminCSRF(http.HandlerFunc(s.handleTokenFinish)))))
@@ -231,10 +244,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/mode", s.dashboardAuth(s.adminSensitive(s.adminCSRF(http.HandlerFunc(s.handleModeSwitch)))))
 	mux.Handle("POST /admin/diag", s.dashboardAuth(s.adminSensitive(s.adminCSRF(http.HandlerFunc(s.handleDiag)))))
 	mux.Handle("POST /admin/smoke", s.dashboardAuth(s.adminSensitive(s.adminCSRF(http.HandlerFunc(s.handleSmoke)))))
-	// noDirListing must wrap StripPrefix, not the other way around: after
-	// the strip the path is "" and a trailing-slash directory request would
-	// slip past the guard into FileServerFS, which renders a listing.
-	mux.Handle("GET /admin/assets/", noDirListing(http.StripPrefix("/admin/assets/", http.FileServerFS(mustSubFS(dashboard.AssetsFS(), "assets")))))
+	// Static assets: serve from embedded dist/assets
+	mux.Handle("GET /admin/assets/", noDirListing(http.StripPrefix("/admin/assets/", http.FileServerFS(mustSubFS(dashboard.DistFS(), "assets")))))
 	// CORS middleware wraps the whole route table: it answers OPTIONS
 	// preflights on the /v1/* API surface with 204 and stamps the allow
 	// headers on every /v1/* response. Admin routes are intentionally left

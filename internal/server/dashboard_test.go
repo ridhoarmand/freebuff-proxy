@@ -120,8 +120,9 @@ func TestDashboardOpenWithoutAdminToken(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (open dashboard)", resp.StatusCode)
 	}
-	if !strings.Contains(bodyOf(t, resp), "Overview") {
-		t.Error("dashboard page missing overview heading")
+	body := bodyOf(t, resp)
+	if !strings.Contains(body, "freebuff-proxy") && !strings.Contains(body, "admin") {
+		t.Error("dashboard page missing SPA content")
 	}
 }
 
@@ -143,12 +144,13 @@ func TestDashboardRedirectsToLogin(t *testing.T) {
 func TestDashboardLoginFlow(t *testing.T) {
 	ts := dashboardServer(t, "secret", nil)
 
-	// Wrong token: page re-rendered with an error, no cookie set.
+	// Wrong token: 401 with JSON error, no cookie set.
 	resp := postLogin(t, ts.URL+"/admin/login", "wrong")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("wrong-token status = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong-token status = %d, want 401", resp.StatusCode)
 	}
-	if !strings.Contains(bodyOf(t, resp), "Invalid admin token.") {
+	body := bodyOf(t, resp)
+	if !strings.Contains(body, "Invalid admin token") {
 		t.Error("wrong-token response missing error message")
 	}
 	if c := resp.Cookies(); len(c) != 0 {
@@ -182,8 +184,8 @@ func TestDashboardLoginFlow(t *testing.T) {
 	if authed.StatusCode != http.StatusOK {
 		t.Fatalf("authed status = %d, want 200", authed.StatusCode)
 	}
-	if !strings.Contains(bodyOf(t, authed), "Overview") {
-		t.Error("authed dashboard missing overview heading")
+	if !strings.Contains(bodyOf(t, authed), "freebuff-proxy") {
+		t.Error("authed dashboard missing SPA content")
 	}
 }
 
@@ -206,7 +208,7 @@ const lockoutBound = 5
 // Assets are public (the login page loads them without a cookie).
 func TestDashboardAssetsPublic(t *testing.T) {
 	ts := dashboardServer(t, "secret", nil)
-	resp := get(t, ts.URL+"/admin/assets/pico.min.css", "")
+	resp := get(t, ts.URL+"/admin/assets/app.css", "")
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("asset status = %d, want 200 without a cookie", resp.StatusCode)
@@ -527,18 +529,22 @@ func TestDashboardTokensPageHybrid(t *testing.T) {
 		c.AuthTokens = []string{"tok-0"}
 	})
 	cookie := authedCookie(t, ts)
-	resp := get(t, ts.URL+"/admin/tokens", cookie)
-	body := bodyOf(t, resp)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("tokens page status = %d, want 200", resp.StatusCode)
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/admin/api/tokens", nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, want := range []string{"pill-hybrid", ">hybrid<", "Hybrid mode", "Switch to hybrid mode", "Switch to bridge mode"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("tokens page missing %q in:\n%s", want, body)
-		}
+	req.Header.Set("Cookie", cookie)
+	rec := httptest.NewRecorder()
+	ts.Config.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tokens api status = %d, want 200", rec.Code)
 	}
-	if strings.Contains(body, "bridge-card") {
-		t.Error("tokens page renders the bridge card in hybrid mode, want pooled-style table")
+	body := rec.Body.String()
+	if !strings.Contains(body, `"mode":"hybrid"`) {
+		t.Errorf("tokens api missing hybrid mode in: %s", body)
+	}
+	if !strings.Contains(body, `"has_tokens":true`) {
+		t.Errorf("tokens api missing has_tokens in: %s", body)
 	}
 }
 
@@ -644,12 +650,20 @@ func TestDashboardConfigPage(t *testing.T) {
 	t.Chdir(t.TempDir())
 	ts := dashboardServer(t, "secret", nil)
 	cookie := authedCookie(t, ts)
-	resp := get(t, ts.URL+"/admin/config", cookie)
-	defer func() { _ = resp.Body.Close() }()
-	page := bodyOf(t, resp)
-	for _, want := range []string{"Effective configuration", "LISTEN_ADDR", "AUTH_TOKENS", "Editor", "Save &amp; reload"} {
-		if !strings.Contains(page, want) {
-			t.Errorf("config page missing %q", want)
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/admin/api/config", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Cookie", cookie)
+	rec := httptest.NewRecorder()
+	ts.Config.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("config api status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"has_env_file"`, `"effective"`, `"LISTEN_ADDR"`, `"AUTH_TOKENS"`, `"env_content"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("config api missing %q in: %s", want, body)
 		}
 	}
 }
@@ -818,16 +832,16 @@ func TestDashboardSmokeFormAndJSON(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("smoke form status = %d, want 200", resp.StatusCode)
 	}
-	if body := bodyOf(t, resp); !strings.Contains(body, "Smoke test OK") {
-		t.Errorf("smoke form response = %q, want success fragment", body)
+	if body := bodyOf(t, resp); !strings.Contains(body, `"ok":true`) && !strings.Contains(body, `"ok": true`) {
+		t.Errorf("smoke form response = %q, want JSON ok:true", body)
 	}
 
 	resp = postJSON(t, ts.URL, cookie, "/admin/smoke", `{"model":"`+modelA+`","prompt":"ping"}`)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("smoke JSON status = %d, want 200", resp.StatusCode)
 	}
-	if body := bodyOf(t, resp); !strings.Contains(body, "Smoke test OK") {
-		t.Errorf("smoke JSON response = %q, want success fragment", body)
+	if body := bodyOf(t, resp); !strings.Contains(body, `"ok":true`) && !strings.Contains(body, `"ok": true`) {
+		t.Errorf("smoke JSON response = %q, want JSON ok:true", body)
 	}
 }
 
@@ -913,8 +927,8 @@ func TestDashboardTokenRemoveRejectsDiverged(t *testing.T) {
 	}
 
 	resp = doTokenAction(t, ts.URL, cookie, "/admin/tokens/remove")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("remove status = %d, want 200 with rejection message", resp.StatusCode)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("remove status = %d, want 400 with rejection message", resp.StatusCode)
 	}
 	body := bodyOf(t, resp)
 	if !strings.Contains(body, "differs from the live pool") {

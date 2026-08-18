@@ -1,0 +1,302 @@
+@import "tailwindcss";
+@import "@fontsource/geist-sans/400.css";
+@import "@fontsource/geist-sans/500.css";
+@import "@fontsource/geist-sans/600.css";
+@import "@fontsource/geist-sans/700.css";
+@import "@fontsource/geist-mono/400.css";
+@import "@fontsource/geist-mono/500.css";
+@import "@fontsource/geist-mono/600.css";
+@import "@fontsource/geist-mono/700.css";
+
+/* ── Design Tokens ────────────────────────────────────────────── */
+:root {
+  /* Backgrounds — layered from deep to surface */
+  --fp-bg:           #0A0F18;
+  --fp-surface:      #111827;
+  --fp-surface-2:    #151C28;
+  --fp-surface-3:    #1C2536;
+  --fp-input-bg:     #0C1220;
+  --fp-card-bg:      #111827;
+
+  /* Borders */
+  --fp-border:       #1E293B;
+  --fp-border-bright:#2A374B;
+  --fp-border-hover: #374B66;
+
+  /* Text */
+  --fp-text:         #F1F5F9;
+  --fp-muted:        #8B9EB7;
+  --fp-dim:          #5C6B82;
+
+  /* Accents */
+  --fp-amber:        #DCA86A;
+  --fp-amber-hover:  #E8BC82;
+  --fp-amber-muted:  #8B7340;
+  --fp-amber-subtle: rgba(220, 168, 106, 0.08);
+  --fp-teal:         #34D399;
+  --fp-red:          #EF4444;
+  --fp-blue:         #60A5FA;
+
+  /* Radii */
+  --fp-radius-sm:    6px;
+  --fp-radius:       10px;
+  --fp-radius-lg:    14px;
+  --fp-radius-xl:    18px;
+
+  /* Transitions */
+  --fp-ease:         cubic-bezier(0.23, 1, 0.32, 1);
+  --fp-duration:     200ms;
+  --fp-duration-lg:  350ms;
+
+  /* Shadows */
+  --fp-shadow-card:  0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px var(--fp-border);
+  --fp-shadow-lg:    0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px var(--fp-border);
+  --fp-glow-amber:   0 0 24px rgba(220,168,106,0.08);
+}
+
+/* ── Base ─────────────────────────────────────────────────────── */
+body {
+  background-color: var(--fp-bg);
+  color: var(--fp-text);
+  font-family: "Geist Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code, pre, .font-mono {
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+/* ── Focus ────────────────────────────────────────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--fp-amber);
+  outline-offset: 2px;
+  border-radius: var(--fp-radius-sm);
+}
+
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Skeleton loading ─────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--fp-surface) 25%, var(--fp-surface-3) 50%, var(--fp-surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--fp-radius);
+}
+
+.skeleton-text { height: 1em; margin-bottom: 0.5em; border-radius: var(--fp-radius-sm); }
+.skeleton-card { height: 120px; border-radius: var(--fp-radius-lg); }
+.skeleton-line { height: 0.75em; border-radius: 3px; }
+
+/* ── Custom scrollbars ────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--fp-border-bright);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fp-muted);
+}
+
+/* ── Page transition ──────────────────────────────────────────── */
+.page-enter {
+  animation: pageIn var(--fp-duration-lg) var(--fp-ease);
+}
+
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Reusable card surface ────────────────────────────────────── */
+.fp-card {
+  background: var(--fp-card-bg);
+  border: 1px solid var(--fp-border);
+  border-radius: var(--fp-radius-lg);
+  box-shadow: var(--fp-shadow-card);
+  transition: border-color var(--fp-duration) var(--fp-ease),
+              box-shadow var(--fp-duration) var(--fp-ease);
+}
+
+.fp-card:hover {
+  border-color: var(--fp-border-bright);
+}
+
+.fp-card-interactive:hover {
+  border-color: var(--fp-border-hover);
+  box-shadow: var(--fp-shadow-lg);
+}
+
+/* ── Reusable inner surface (recessed) ────────────────────────── */
+.fp-inset {
+  background: var(--fp-input-bg);
+  border: 1px solid var(--fp-border);
+  border-radius: var(--fp-radius);
+}
+
+/* ── Button base ──────────────────────────────────────────────── */
+.fp-btn-primary {
+  background: var(--fp-amber);
+  color: #1A1A1A;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: var(--fp-radius);
+  padding: 0.5rem 1.25rem;
+  transition: all var(--fp-duration) var(--fp-ease);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.fp-btn-primary:hover:not(:disabled) {
+  background: var(--fp-amber-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(220,168,106,0.2);
+}
+
+.fp-btn-primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.fp-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fp-btn-secondary {
+  background: var(--fp-surface-3);
+  color: white;
+  font-weight: 600;
+  font-size: 0.75rem;
+  border: 1px solid var(--fp-border-bright);
+  border-radius: var(--fp-radius);
+  padding: 0.375rem 0.75rem;
+  transition: all var(--fp-duration) var(--fp-ease);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.fp-btn-secondary:hover:not(:disabled) {
+  background: var(--fp-border-bright);
+}
+
+.fp-btn-secondary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.fp-btn-danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--fp-red);
+  font-weight: 600;
+  font-size: 0.75rem;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--fp-radius);
+  padding: 0.375rem 0.75rem;
+  transition: all var(--fp-duration) var(--fp-ease);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.fp-btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.22);
+}
+
+/* ── Input base ───────────────────────────────────────────────── */
+.fp-input {
+  width: 100%;
+  background: var(--fp-input-bg);
+  border: 1px solid var(--fp-border);
+  border-radius: var(--fp-radius);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--fp-text);
+  font-family: inherit;
+  transition: border-color var(--fp-duration) var(--fp-ease);
+}
+
+.fp-input:focus {
+  outline: none;
+  border-color: var(--fp-amber);
+  box-shadow: 0 0 0 3px var(--fp-amber-subtle);
+}
+
+.fp-input-mono {
+  font-family: "Geist Mono", ui-monospace, monospace;
+}
+
+/* ── Table base ───────────────────────────────────────────────── */
+.fp-table {
+  width: 100%;
+  text-align: left;
+  font-size: 0.75rem;
+  font-family: "Geist Mono", ui-monospace, monospace;
+}
+
+.fp-table thead {
+  background: var(--fp-input-bg);
+  color: var(--fp-dim);
+  border-bottom: 1px solid var(--fp-border);
+}
+
+.fp-table th {
+  padding: 0.625rem 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.625rem;
+}
+
+.fp-table tbody {
+  background: var(--fp-surface);
+}
+
+.fp-table tbody tr {
+  border-bottom: 1px solid var(--fp-border);
+  transition: background var(--fp-duration) var(--fp-ease);
+}
+
+.fp-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.fp-table tbody tr:hover {
+  background: var(--fp-surface-2);
+}
+
+.fp-table td {
+  padding: 0.625rem 0.75rem;
+}
+
+/* ── Tabular numbers ──────────────────────────────────────────── */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Reduced motion ───────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

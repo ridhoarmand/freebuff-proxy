@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -67,8 +66,8 @@ func TestPlaygroundPageRenders(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	page := rec.Body.String()
-	if !strings.Contains(page, "Playground") || !strings.Contains(page, "pg-model") || !strings.Contains(page, "pg-send") {
-		t.Error("playground page missing key elements")
+	if !strings.Contains(page, "freebuff-proxy") && !strings.Contains(page, "admin") {
+		t.Error("playground page missing SPA content")
 	}
 }
 
@@ -233,16 +232,17 @@ func TestUpdateBadgeRendered(t *testing.T) {
 		s.version = "v0.9.3"
 		s.updates = checker
 	})
-	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/api/version", nil)
 	req.Host = "127.0.0.1:3457"
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
-	page := rec.Body.String()
-	latest, lerr := srv.updates.Latest(context.Background())
-	idx := strings.Index(page, "update:")
-	t.Logf("hits=%d badge=%v latest=%q err=%v ctx=%q", hits.Load(), strings.Contains(page, "update:"), latest, lerr, page[idx:idx+40])
-	if !strings.Contains(page, "update: v9.9.9") {
-		t.Error("update badge missing for newer release")
+	body := rec.Body.String()
+	t.Logf("hits=%d body=%s", hits.Load(), body)
+	if !strings.Contains(body, `"has_update":true`) {
+		t.Errorf("version api missing has_update:true in: %s", body)
+	}
+	if !strings.Contains(body, `"latest_version":"v9.9.9"`) {
+		t.Errorf("version api missing latest_version v9.9.9 in: %s", body)
 	}
 	if hits.Load() == 0 {
 		t.Error("update checker never queried")

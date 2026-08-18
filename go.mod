@@ -12,6 +12,7 @@ require (
 )
 
 require (
+	github.com/a-h/templ v0.3.1020 // indirect
 	github.com/dlclark/regexp2/v2 v2.5.1 // indirect
 	github.com/xyproto/randomstring v1.2.0 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
