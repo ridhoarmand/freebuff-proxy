@@ -2177,3 +2177,62 @@ func TestCapHint(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractXMLToolCalls(t *testing.T) {
+	t.Run("hermes xml format", func(t *testing.T) {
+		raw := "Let me run the command:\n<tool_call>\n<function=bash>\n<parameter=command>rtk --version 2>&1</parameter>\n</function>\n</tool_call>"
+		cleaned, calls := extractXMLToolCalls(raw)
+		if cleaned != "Let me run the command:" {
+			t.Errorf("cleaned = %q, want 'Let me run the command:'", cleaned)
+		}
+		if len(calls) != 1 {
+			t.Fatalf("calls len = %d, want 1", len(calls))
+		}
+		if calls[0].Function.Name != "bash" {
+			t.Errorf("name = %q, want 'bash'", calls[0].Function.Name)
+		}
+		var argsMap map[string]string
+		if err := json.Unmarshal([]byte(calls[0].Function.Arguments), &argsMap); err != nil {
+			t.Fatalf("unmarshal args: %v", err)
+		}
+		if argsMap["command"] != "rtk --version 2>&1" {
+			t.Errorf("command = %q, want 'rtk --version 2>&1'", argsMap["command"])
+		}
+	})
+
+	t.Run("json in tool_call tag", func(t *testing.T) {
+		raw := "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Jakarta\"}}\n</tool_call>"
+		cleaned, calls := extractXMLToolCalls(raw)
+		if cleaned != "" {
+			t.Errorf("cleaned = %q, want empty", cleaned)
+		}
+		if len(calls) != 1 {
+			t.Fatalf("calls len = %d, want 1", len(calls))
+		}
+		if calls[0].Function.Name != "get_weather" {
+			t.Errorf("name = %q, want 'get_weather'", calls[0].Function.Name)
+		}
+	})
+}
+
+func TestAccumulatorXMLToolCallFinish(t *testing.T) {
+	a := NewAccumulator()
+	line := `{"choices":[{"index":0,"delta":{"content":"<tool_call>\n<function=bash>\n<parameter=command>ls -la</parameter>\n</function>\n</tool_call>"}}]}`
+	if err := a.Add([]byte(line)); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	out := decode(t, a.Finish())
+	choice := out["choices"].([]any)[0].(map[string]any)
+	msg := choice["message"].(map[string]any)
+	if choice["finish_reason"] != "tool_calls" {
+		t.Errorf("finish_reason = %v, want 'tool_calls'", choice["finish_reason"])
+	}
+	calls, ok := msg["tool_calls"].([]any)
+	if !ok || len(calls) != 1 {
+		t.Fatalf("tool_calls = %v, want 1 tool call", msg["tool_calls"])
+	}
+	fn := calls[0].(map[string]any)["function"].(map[string]any)
+	if fn["name"] != "bash" {
+		t.Errorf("fn name = %v, want 'bash'", fn["name"])
+	}
+}

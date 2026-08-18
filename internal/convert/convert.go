@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -1663,6 +1664,117 @@ func (a *Accumulator) addToolCall(tc map[string]any) {
 	}
 }
 
+// xmlToolCallRegex matches XML-based tool calls such as:
+//
+//	<tool_call>
+//	<function=bash>
+//	<parameter=command>...</parameter>
+//	</function>
+//	</tool_call>
+//
+// or <tool_call>{"name":"...","arguments":{...}}</tool_call>
+var (
+	xmlToolCallBlockRe = regexp.MustCompile(`(?s)<tool_call>(.*?)</tool_call>|<function_call>(.*?)</function_call>`)
+	xmlFunctionHeadRe  = regexp.MustCompile(`(?i)<function[=\s]+["']?([^>"\s]+)["']?>`)
+	xmlParamRe         = regexp.MustCompile(`(?s)<parameter[=\s]+["']?([^>"\s]+)["']?>(.*?)</parameter>|<param[=\s]+["']?([^>"\s]+)["']?>(.*?)</param>`)
+)
+
+// extractXMLToolCalls parses text-based tool calls (Hermes/Qwen/MiMo XML format)
+// that were emitted into content instead of native OpenAI tool_calls fields.
+// It returns the cleaned content string and the extracted tool calls.
+func extractXMLToolCalls(content string) (string, []*toolCall) {
+	matches := xmlToolCallBlockRe.FindAllStringSubmatchIndex(content, -1)
+	if len(matches) == 0 {
+		return content, nil
+	}
+
+	var calls []*toolCall
+	for _, loc := range matches {
+		block := content[loc[0]:loc[1]]
+		inner := xmlToolCallBlockRe.FindStringSubmatch(block)
+		if len(inner) < 2 {
+			continue
+		}
+		raw := inner[1]
+		if raw == "" && len(inner) > 2 {
+			raw = inner[2]
+		}
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+
+		// 1. Try parsing raw as direct JSON: {"name":"...", "arguments":{...}}
+		if strings.HasPrefix(raw, "{") && strings.HasSuffix(raw, "}") {
+			var jObj map[string]any
+			if err := json.Unmarshal([]byte(raw), &jObj); err == nil {
+				name, _ := jObj["name"].(string)
+				if name == "" {
+					name, _ = jObj["function"].(string)
+				}
+				if name != "" {
+					var argsStr string
+					if argsObj, ok := jObj["arguments"].(map[string]any); ok {
+						if b, err := json.Marshal(argsObj); err == nil {
+							argsStr = string(b)
+						}
+					} else if aStr, ok := jObj["arguments"].(string); ok {
+						argsStr = aStr
+					} else {
+						argsStr = "{}"
+					}
+					calls = append(calls, &toolCall{
+						ID:   "call_" + randHex(12),
+						Type: "function",
+						Function: toolFunction{
+							Name:      name,
+							Arguments: argsStr,
+						},
+					})
+					continue
+				}
+			}
+		}
+
+		// 2. Try parsing XML format: <function=NAME><parameter=KEY>VAL</parameter></function>
+		fnMatch := xmlFunctionHeadRe.FindStringSubmatch(raw)
+		if len(fnMatch) >= 2 {
+			fnName := strings.TrimSpace(fnMatch[1])
+			paramMatches := xmlParamRe.FindAllStringSubmatch(raw, -1)
+			argsMap := make(map[string]any)
+			for _, pm := range paramMatches {
+				pName := pm[1]
+				pVal := pm[2]
+				if pName == "" && len(pm) > 4 {
+					pName = pm[3]
+					pVal = pm[4]
+				}
+				pName = strings.TrimSpace(pName)
+				// Strip trailing corrupted syntax like `"{"command` if present
+				pVal = strings.TrimSpace(pVal)
+				argsMap[pName] = pVal
+			}
+			argsBytes, _ := json.Marshal(argsMap)
+			calls = append(calls, &toolCall{
+				ID:   "call_" + randHex(12),
+				Type: "function",
+				Function: toolFunction{
+					Name:      fnName,
+					Arguments: string(argsBytes),
+				},
+			})
+		}
+	}
+
+	if len(calls) == 0 {
+		return content, nil
+	}
+
+	// Clean the tool_call blocks from content
+	cleaned := xmlToolCallBlockRe.ReplaceAllString(content, "")
+	return strings.TrimSpace(cleaned), calls
+}
+
 // Finish returns the assembled chat.completion response as compact JSON:
 // content and reasoning_content are concatenated across chunks, tool_calls
 // are stitched by index and sorted, finish_reason is the last non-empty one
@@ -1674,6 +1786,15 @@ func (a *Accumulator) Finish() []byte {
 	if tag := reasoningInContentMode(); tag != "" {
 		if rc := strings.Join(a.reasoningParts, ""); rc != "" {
 			content = "<" + tag + ">" + rc + "</" + tag + ">" + content
+		}
+	}
+	// If native toolCalls are empty, try extracting any inline XML tool calls
+	// that were emitted into content (e.g. from Hermes/Qwen/MiMo models).
+	if len(a.toolCalls) == 0 {
+		var extracted []*toolCall
+		content, extracted = extractXMLToolCalls(content)
+		for idx, tc := range extracted {
+			a.toolCalls[idx] = tc
 		}
 	}
 	msg := map[string]any{
