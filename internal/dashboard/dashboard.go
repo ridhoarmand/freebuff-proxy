@@ -99,41 +99,6 @@ func New(cfg func() *config.Config, p *pool.Pool, reg *registry.Registry, logger
 // releaseURL is where the update badge points (the releases page).
 const releaseURL = "https://github.com/trefeon/freebuff-proxy/releases"
 
-// hostIsLoopback reports whether a request Host (possibly with port) is a
-// loopback name — 127.0.0.1, localhost, ::1 — or the listen address's own
-// host (issue #46).
-func hostIsLoopback(host, listenAddr string) bool {
-	h := host
-	if hostname, _, err := net.SplitHostPort(host); err == nil {
-		h = hostname
-	}
-	h = strings.Trim(strings.TrimSpace(strings.ToLower(h)), "[]")
-	switch h {
-	case "", "127.0.0.1", "::1", "localhost":
-		return true
-	}
-	if listenAddr != "" {
-		if lh, _, err := net.SplitHostPort(listenAddr); err == nil {
-			lh = strings.Trim(strings.TrimSpace(strings.ToLower(lh)), "[]")
-			if lh != "" && lh != "0.0.0.0" && lh != "::" && lh == h {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// wantsAPIJSON reports whether the client expects an API JSON response.
-func wantsAPIJSON(r *http.Request) bool {
-	if r == nil {
-		return false
-	}
-	accept := r.Header.Get("Accept")
-	return strings.Contains(accept, "application/json") ||
-		r.Header.Get("X-Requested-With") == "fetch" ||
-		strings.HasPrefix(r.URL.Path, "/admin/api/")
-}
-
 // pickDefaultModel selects deepseek/deepseek-v4-flash when present, or the first available model.
 func pickDefaultModel(models []string) string {
 	if len(models) == 0 {
@@ -788,33 +753,25 @@ type overviewData struct {
 }
 
 type tokenCard struct {
-	Index            int     `json:"index"`
-	SessionStatus    string  `json:"session_status"`
-	QueuePosition    int     `json:"queue_position"`
-	QueueDepth       int     `json:"queue_depth"`
-	ActiveRuns       int     `json:"active_runs"`
-	Requests         int     `json:"requests"`
-	Messages24h      int     `json:"messages_24h"`
-	DailyLimit       int     `json:"daily_limit"`
-	UsagePct         int     `json:"usage_pct"`
-	RiskLevel        string  `json:"risk_level"`
-	CooldownActive   bool    `json:"cooldown_active"`
-	CooldownUntil    string  `json:"cooldown_until"`
-	TransientRetries int64   `json:"transient_retries"`
+	Index               int     `json:"index"`
+	SessionStatus       string  `json:"session_status"`
+	QueuePosition       int     `json:"queue_position"`
+	QueueDepth          int     `json:"queue_depth"`
+	ActiveRuns          int     `json:"active_runs"`
+	Requests            int     `json:"requests"`
+	Messages24h         int     `json:"messages_24h"`
+	DailyLimit          int     `json:"daily_limit"`
+	UsagePct            int     `json:"usage_pct"`
+	RiskLevel           string  `json:"risk_level"`
+	CooldownActive      bool    `json:"cooldown_active"`
+	CooldownUntil       string  `json:"cooldown_until"`
+	TransientRetries    int64   `json:"transient_retries"`
 	HasStanding         bool    `json:"has_standing"`
 	StandingLevel       string  `json:"standing_level"`
 	StandingLabel       string  `json:"standing_label"`
 	StandingScore       float64 `json:"standing_score"`
 	StandingNextLevel   string  `json:"standing_next_level"`
 	StandingNextLevelAt string  `json:"standing_next_level_at"`
-}
-
-type loginData struct {
-	Error string `json:"error"`
-}
-
-type restrictedData struct {
-	Error string `json:"error"`
 }
 
 type configData struct {
@@ -829,35 +786,11 @@ type configKV struct {
 	Secret bool   `json:"secret"`
 }
 
-type configResultData struct {
-	OK      bool   `json:"ok"`
-	Message string `json:"message"`
-}
-
-type testResultData struct {
-	Token      int    `json:"token"`
-	OK         bool   `json:"ok"`
-	Message    string `json:"message"`
-	InstanceID string `json:"instance_id"`
-}
-
-type smokeResultData struct {
-	Model   string    `json:"model"`
-	Token   string    `json:"token"`
-	Ms      int64     `json:"ms"`
-	Preview string    `json:"preview"`
-	Phases  []PhaseKV `json:"phases"`
-}
-
 type DiagCheck struct {
 	Name    string `json:"name"`
 	OK      bool   `json:"ok"`
 	Warn    bool   `json:"warn"`
 	Message string `json:"message"`
-}
-
-type diagData struct {
-	Checks []DiagCheck `json:"checks"`
 }
 
 func (d *Dashboard) configData() configData {

@@ -718,31 +718,6 @@ func (s *Server) adminSensitive(next http.Handler) http.Handler {
 	})
 }
 
-// isLoopback reports whether the request came from a loopback address.
-func isLoopback(r *http.Request) bool {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return false
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}
-
-// isLoopbackHost reports whether the request's Host header names a loopback
-// target (127.0.0.1, ::1, localhost, *.localhost). Used by the open-mode
-// adminSensitive gate to stop DNS-rebinding access.
-func isLoopbackHost(hostport string) bool {
-	host, _, err := net.SplitHostPort(hostport)
-	if err != nil {
-		host = hostport // bare host (no port)
-	}
-	if ip := net.ParseIP(host); ip != nil {
-		return ip.IsLoopback()
-	}
-	h := strings.ToLower(strings.TrimSuffix(host, "."))
-	return h == "localhost" || strings.HasSuffix(h, ".localhost")
-}
-
 // adminCSRF rejects cross-origin mutating admin requests. Browsers send
 // Origin (and/or Sec-Fetch-Site) on every POST; a malicious site's form
 // would carry an Origin that does not match the proxy's own host. Requests

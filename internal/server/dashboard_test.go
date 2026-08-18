@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"freebuff-proxy/internal/config"
+	"freebuff-proxy/internal/dashboard"
 	"freebuff-proxy/internal/pool"
 	"freebuff-proxy/internal/registry"
 	"freebuff-proxy/internal/server"
@@ -208,10 +210,16 @@ const lockoutBound = 5
 // Assets are public (the login page loads them without a cookie).
 func TestDashboardAssetsPublic(t *testing.T) {
 	ts := dashboardServer(t, "secret", nil)
-	resp := get(t, ts.URL+"/admin/assets/app.css", "")
+	distFS := dashboard.DistFS()
+	entries, err := fs.ReadDir(distFS, "assets")
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("no assets in dist: %v", err)
+	}
+	assetPath := "/admin/assets/" + entries[0].Name()
+	resp := get(t, ts.URL+assetPath, "")
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("asset status = %d, want 200 without a cookie", resp.StatusCode)
+		t.Fatalf("asset status = %d, want 200 without a cookie (path: %s)", resp.StatusCode, assetPath)
 	}
 }
 
