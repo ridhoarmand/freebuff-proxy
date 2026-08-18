@@ -1,11 +1,11 @@
 {{define "logs"}}
 <section class="page-head">
   <div>
-    <h1>Logs</h1>
-    <p class="muted">last 200 records from the in-memory ring — refreshes every 3s</p>
+    <h1>In-Memory Log Stream</h1>
+    <p class="muted">Circular log buffer (last 200 records) with instant level filtering and substring search — refreshes every 3s</p>
   </div>
   <div class="pills">
-    <span class="pill">{{if .Enabled}}ring enabled{{else}}ring disabled{{end}}</span>
+    <span class="pill pill-{{if .Enabled}}safe{{else}}pool{{end}}">{{if .Enabled}}ring enabled{{else}}ring disabled{{end}}</span>
   </div>
 </section>
 
@@ -14,12 +14,12 @@
   <select id="logs-level" name="level" aria-label="Filter by level"
           hx-get="/admin/logs" hx-target="#logs-root" hx-swap="innerHTML" hx-trigger="change">
     <option value="">all levels</option>
-    <option value="info" {{if eq .Level "info"}}selected{{end}}>info</option>
-    <option value="debug" {{if eq .Level "debug"}}selected{{end}}>debug</option>
-    <option value="warn" {{if eq .Level "warn"}}selected{{end}}>warn</option>
-    <option value="error" {{if eq .Level "error"}}selected{{end}}>error</option>
+    <option value="info" {{if eq .Level "info"}}selected{{end}}>INFO</option>
+    <option value="debug" {{if eq .Level "debug"}}selected{{end}}>DEBUG</option>
+    <option value="warn" {{if eq .Level "warn"}}selected{{end}}>WARN</option>
+    <option value="error" {{if eq .Level "error"}}selected{{end}}>ERROR</option>
   </select>
-  <input type="search" id="logs-msg" name="msg" value="{{.Msg}}" placeholder="filter by message" aria-label="Filter by message"
+  <input type="search" id="logs-msg" name="msg" value="{{.Msg}}" placeholder="Filter by message substring..." aria-label="Filter by message"
          hx-get="/admin/logs" hx-target="#logs-root" hx-swap="innerHTML" hx-trigger="input changed delay:400ms">
 </div>
 {{end}}
@@ -27,27 +27,27 @@
 {{if not .Enabled}}
 <article class="card empty-card">
   <h2>Log viewer disabled</h2>
-  <p>The log ring was not wired (started without the dashboard log handler).</p>
+  <p>The log ring was not initialized (started without the dashboard log handler).</p>
 </article>
 {{else if not .Entries}}
 <article class="card empty-card">
   {{if .HasFilter}}
   <h2>No matching log records</h2>
-  <p>No records match the current filters.</p>
+  <p class="muted">No records match the active filter criteria.</p>
   {{else}}
   <h2>No log records yet</h2>
-  <p>Records appear here as the proxy logs them.</p>
+  <p class="muted">Proxy logs will appear here live as requests are processed.</p>
   {{end}}
 </article>
 {{else}}
 <div class="table-wrap">
   <table class="log-table">
-    <thead class="visually-hidden">
+    <thead>
       <tr>
-        <th scope="col">time</th>
-        <th scope="col">level</th>
-        <th scope="col">message</th>
-        <th scope="col">fields</th>
+        <th scope="col" style="width: 140px;">Timestamp</th>
+        <th scope="col" style="width: 80px;">Level</th>
+        <th scope="col">Message</th>
+        <th scope="col">Fields / Metadata</th>
       </tr>
     </thead>
     <tbody>

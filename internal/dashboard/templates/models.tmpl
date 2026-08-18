@@ -1,25 +1,28 @@
 {{define "models"}}
 <section class="page-head">
   <div>
-    <h1>Models</h1>
-    <p class="muted">catalog from the live registry (fallback at boot + periodic refresh)</p>
+    <h1>Model Catalog &amp; Registry</h1>
+    <p class="muted">Live models parsed from TypeScript registry definitions with dynamic fallback &amp; alias resolution</p>
   </div>
   <div class="pills">
-    <span class="pill">{{.Count}} models</span>
-    <span class="pill">{{.Agents}} agents</span>
+    <span class="pill pill-safe">{{.Count}} registered models</span>
+    <span class="pill">{{.Agents}} upstream agents</span>
   </div>
 </section>
 
 <div class="table-wrap">
   <table class="model-table">
     <thead>
-      <tr><th scope="col">model id</th><th scope="col">upstream agent</th></tr>
+      <tr>
+        <th scope="col">Model Identifier (ID)</th>
+        <th scope="col">Upstream Agent Binding</th>
+      </tr>
     </thead>
     <tbody>
     {{range .Models}}
       <tr>
-        <td class="mono">{{.ID}}</td>
-        <td class="mono">{{.Agent}}</td>
+        <td class="mono"><strong>{{.ID}}</strong></td>
+        <td class="mono">{{if .Agent}}{{.Agent}}{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
     {{end}}
     </tbody>
@@ -27,15 +30,23 @@
 </div>
 
 {{if .HasAliases}}
-<section class="card aliases-card">
-  <h2>Aliases</h2>
-  <p class="muted">MODEL_ALIASES mappings — clients may use the alias instead of the full id.</p>
-  <div class="table-wrap">
+<section class="card aliases-card" style="margin-top: 1.5rem;">
+  <h2>Active Model Aliases</h2>
+  <p class="muted">Configured in <code>MODEL_ALIASES</code> — client requests requesting the alias are transparently rewritten to the target model.</p>
+  <div class="table-wrap" style="margin-top: 0.75rem;">
     <table class="model-table">
-      <thead><tr><th scope="col">alias</th><th scope="col">resolves to</th></tr></thead>
+      <thead>
+        <tr>
+          <th scope="col">Client Alias</th>
+          <th scope="col">Target Model ID</th>
+        </tr>
+      </thead>
       <tbody>
       {{range .Aliases}}
-        <tr><td class="mono">{{.Alias}}</td><td class="mono">{{.Real}}</td></tr>
+        <tr>
+          <td class="mono"><strong>{{.Alias}}</strong></td>
+          <td class="mono">{{.Real}}</td>
+        </tr>
       {{end}}
       </tbody>
     </table>

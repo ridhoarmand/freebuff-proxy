@@ -1,37 +1,43 @@
 {{define "config"}}
 <section class="page-head">
   <div>
-    <h1>Config</h1>
-    <p class="muted">edit <code>.env</code> in the proxy working directory — save validates and hot-reloads</p>
+    <h1>Configuration Studio</h1>
+    <p class="muted">Live runtime configuration inspector &amp; hot-reloading <code>.env</code> editor with atomic rollback</p>
   </div>
   <div class="pills">
-    <span class="pill">{{if .HasEnvFile}}.env present{{else}}no .env yet{{end}}</span>
+    <span class="pill pill-{{if .HasEnvFile}}safe{{else}}pool{{end}}">{{if .HasEnvFile}}✓ .env loaded{{else}}no .env yet{{end}}</span>
   </div>
 </section>
 
 <div class="config-grid">
   <article class="card">
     <h2>Effective configuration</h2>
-    <p class="muted">secrets shown as set/unset + counts; values may come from env vars or the JSON config, which always win over <code>.env</code>.</p>
-    <table class="kv-table">
-      <tbody>
-      {{range .Effective}}
-        <tr>
-          <th scope="row" class="mono">{{.Key}}</th>
-          <td>{{if .Secret}}<span class="secret">{{.Value}}</span>{{else}}<span class="mono">{{.Value}}</span>{{end}}</td>
-        </tr>
-      {{end}}
-      </tbody>
-    </table>
+    <p class="muted">Resolved configuration currently active in memory. Secrets (tokens, admin keys) are redacted for security.</p>
+    <div class="table-wrap" style="margin-top: 0.85rem;">
+      <table class="kv-table">
+        <thead>
+          <tr><th scope="col">Setting</th><th scope="col">Active Value</th></tr>
+        </thead>
+        <tbody>
+        {{range .Effective}}
+          <tr>
+            <th scope="row" class="mono">{{.Key}}</th>
+            <td>{{if .Secret}}<span class="secret">{{.Value}}</span>{{else}}<span class="mono"><strong>{{.Value}}</strong></span>{{end}}</td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+    </div>
   </article>
 
   <article class="card">
     <h2>Editor</h2>
+    <p class="muted">Edit environment variables directly. On save, changes are strictly validated and atomically swapped without dropping active sessions.</p>
     <form method="post" action="/admin/config" hx-post="/admin/config" hx-target="#config-result" hx-swap="innerHTML">
-      <label for="env-content">.env content</label>
-      <textarea id="env-content" name="content" rows="24" class="mono" spellcheck="false" required>{{.EnvContent}}</textarea>
-      <div class="form-actions">
-        <button type="submit">Save &amp; reload</button>
+      <label for="env-content" class="visually-hidden">.env content</label>
+      <textarea id="env-content" name="content" rows="22" class="mono" spellcheck="false" required style="font-size: 0.85rem; line-height: 1.45;">{{.EnvContent}}</textarea>
+      <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.85rem;">
+        <button type="submit" class="action-btn btn-test">Save &amp; reload</button>
       </div>
     </form>
     <div id="config-result"></div>

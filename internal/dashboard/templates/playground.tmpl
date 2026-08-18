@@ -1,49 +1,87 @@
 {{define "playground"}}
 <section class="page-head">
   <div>
-    <h1>Playground</h1>
-    <p class="muted">instant model testing — one real chat through the proxy</p>
+    <h1>Model Playground</h1>
+    <p class="muted">Interactive model prompt console with live SSE streaming and reasoning inspection</p>
   </div>
   <div class="pills">
-    <span class="pill mono">{{.Mode}}</span>
+    <span class="pill pill-{{if eq .Mode "bridge"}}bridge{{else if eq .Mode "hybrid"}}hybrid{{else}}pool{{end}}">{{.Mode}} mode</span>
   </div>
 </section>
 
 {{if not .HasModels}}
 <article class="card empty-card">
-  <h2>No models in the registry</h2>
-  <p>The model catalog is empty (registry refresh may have failed at boot). Check the <a href="/admin/logs">logs</a>.</p>
+  <h2>No Models Available in Registry</h2>
+  <p>The model catalog is empty (registry refresh may have failed at boot). Check the <a href="/admin/logs">system logs</a>.</p>
 </article>
 {{else}}
 <article class="card playground-card">
   <form id="playground-form" class="playground-form">
-    <label for="pg-model">Model</label>
-    <select id="pg-model" name="model" aria-label="Model">
-      {{range .Models}}<option value="{{.}}" {{if eq . $.Model}}selected{{end}}>{{.}}</option>{{end}}
-    </select>
-    <label for="pg-prompt">Prompt</label>
-    <textarea id="pg-prompt" name="prompt" rows="6" maxlength="4000" placeholder="Ask the model anything..." spellcheck="false"></textarea>
-    <button type="submit" id="pg-send">Send</button>
+    <div style="display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 0.75rem;">
+      <div style="display: flex; gap: 0.5rem; align-items: center; flex: 1 1 20rem;">
+        <label for="pg-model" style="margin: 0; font-weight: 600; font-size: 0.875rem;">Model:</label>
+        <select id="pg-model" name="model" aria-label="Model" style="margin: 0; flex: 1;">
+          {{range .Models}}<option value="{{.}}" {{if eq . $.Model}}selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </div>
+      <div style="font-size: 0.78rem;" class="muted mono" id="pg-prompt-stats">Press Ctrl+Enter to send</div>
+    </div>
+    
+    <label for="pg-prompt" class="visually-hidden">Prompt</label>
+    <textarea id="pg-prompt" name="prompt" rows="5" maxlength="8000" placeholder="Ask the model anything (e.g. write an idiomatic Go routine)..." spellcheck="false" required></textarea>
+    
+    <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.75rem;">
+      <button type="button" id="pg-clear" class="action-btn btn-finish">Clear</button>
+      <button type="submit" id="pg-send" class="action-btn btn-test">▶ Send Prompt</button>
+    </div>
   </form>
-  <div id="pg-output" class="playground-output" aria-live="polite"></div>
+  
+  <div id="pg-output" class="playground-output" aria-live="polite">
+    <span class="muted mono">// Model output stream will render here in real-time...</span>
+  </div>
 </article>
+
 <script>
-// Issue #45: a plain fetch against the admin streaming endpoint (same
-// pipeline as /v1/chat/completions, dashboard-auth'd) with SSE handling.
+// Issue #45: plain fetch against the admin streaming endpoint with SSE handling & reasoning blocks.
 (function () {
   var form = document.getElementById("playground-form");
+  var promptEl = document.getElementById("pg-prompt");
   var output = document.getElementById("pg-output");
   var send = document.getElementById("pg-send");
-  if (!form || !output || !send) return;
+  var clearBtn = document.getElementById("pg-clear");
+  if (!form || !output || !send || !promptEl) return;
+
+  if (clearBtn) {
+    clearBtn.addEventListener("click", function () {
+      promptEl.value = "";
+      output.innerHTML = '<span class="muted mono">// Model output stream will render here in real-time...</span>';
+      promptEl.focus();
+    });
+  }
+
+  // Ctrl+Enter or Cmd+Enter to send prompt
+  promptEl.addEventListener("keydown", function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      form.dispatchEvent(new Event("submit"));
+    }
+  });
+
   form.addEventListener("submit", function (ev) {
     ev.preventDefault();
     var model = document.getElementById("pg-model").value;
-    var prompt = document.getElementById("pg-prompt").value.trim();
+    var prompt = promptEl.value.trim();
     if (!prompt) return;
     output.textContent = "";
     send.disabled = true;
     send.textContent = "Streaming…";
-    var started = false;
+
+    var reasoningText = "";
+    var contentText = "";
+    var thinkingContainer = null;
+    var contentContainer = document.createElement("div");
+    output.appendChild(contentContainer);
+
     fetch("/admin/playground/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -51,9 +89,9 @@
     }).then(function (resp) {
       if (!resp.ok) {
         return resp.text().then(function (t) {
-          output.textContent = "HTTP " + resp.status + ": " + t;
+          output.innerHTML = '<span class="result result-err">HTTP ' + resp.status + ': ' + t + '</span>';
           send.disabled = false;
-          send.textContent = "Send";
+          send.textContent = "▶ Send Prompt";
         });
       }
       var reader = resp.body.getReader();
@@ -75,8 +113,27 @@
                 var obj = JSON.parse(data);
                 if (obj.choices && obj.choices[0] && obj.choices[0].delta) {
                   var d = obj.choices[0].delta;
-                  var text = (d.content || "") + (d.reasoning_content || "");
-                  if (text) { output.textContent += text; output.scrollTop = output.scrollHeight; }
+                  if (d.reasoning_content) {
+                    reasoningText += d.reasoning_content;
+                    if (!thinkingContainer) {
+                      thinkingContainer = document.createElement("details");
+                      thinkingContainer.className = "thinking-block";
+                      thinkingContainer.open = true;
+                      var summary = document.createElement("summary");
+                      summary.textContent = "Thinking Process / Reasoning";
+                      thinkingContainer.appendChild(summary);
+                      var p = document.createElement("div");
+                      p.className = "thinking-content";
+                      thinkingContainer.appendChild(p);
+                      output.insertBefore(thinkingContainer, contentContainer);
+                    }
+                    thinkingContainer.querySelector(".thinking-content").textContent = reasoningText;
+                  }
+                  if (d.content) {
+                    contentText += d.content;
+                    contentContainer.textContent = contentText;
+                  }
+                  output.scrollTop = output.scrollHeight;
                 }
               } catch (e) { /* keep partial lines buffered */ }
             });
@@ -86,14 +143,16 @@
       }
       function finish() {
         send.disabled = false;
-        send.textContent = "Send";
-        if (!output.textContent) output.textContent = "(no content)";
+        send.textContent = "▶ Send Prompt";
+        if (!contentText && !reasoningText) {
+          output.textContent = "(no content received)";
+        }
       }
       return pump();
     }).catch(function (err) {
-      output.textContent = "Request failed: " + err;
+      output.innerHTML = '<span class="result result-err">Request failed: ' + err + '</span>';
       send.disabled = false;
-      send.textContent = "Send";
+      send.textContent = "▶ Send Prompt";
     });
   });
 })();
