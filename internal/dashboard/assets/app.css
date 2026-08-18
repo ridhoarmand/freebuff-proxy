@@ -757,8 +757,131 @@ textarea[name="content"] {
   margin: 0.3rem 0;
 }
 
+/* --- Accessibility, Touch Targets & Micro-interactions --- */
+
+:focus-visible {
+  outline: 2px solid var(--fp-amber) !important;
+  outline-offset: 2px !important;
+}
+
+button:active, .action-btn:active, input[type="submit"]:active {
+  transform: scale(0.97);
+  transition: transform 80ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 768px) {
+  .site nav.container {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .nav-brand-wrap {
+    justify-content: space-between;
+  }
+
+  .nav-menu {
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav-link {
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .page-head {
+    margin: 1rem 0 0.85rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .page-head h1 {
+    font-size: 1.35rem;
+  }
+
+  .token-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kv {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 0.6rem 0.5rem;
+  }
+
+  .token-actions {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .action-btn {
+    min-height: 36px;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.825rem;
+  }
+
+  .token-actions-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .token-actions-bar .action-btn {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .tokens-control-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .smoke-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .smoke-form select,
+  .smoke-form input,
+  .smoke-form button {
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 42px;
+  }
+
+  .logs-filter {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .logs-filter select,
+  .logs-filter input {
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 42px;
+  }
+
+  .setup-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 /* --- reduced motion --- */
 
 @media (prefers-reduced-motion: reduce) {
   .state-dot.dot-critical { animation: none; }
+  button:active, .action-btn:active, input[type="submit"]:active { transform: none; }
 }
