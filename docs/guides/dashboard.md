@@ -1,126 +1,61 @@
 # Dashboard Guide
 
-The embedded admin web UI gives you live relay state, per-token quota, a `.env`
-config editor, logs, and metrics, in the same single binary, with no build
-step and no extra process. It is htmx + Pico CSS vendored into the binary at
-compile time (`internal/dashboard`); the server is untouched.
+The embedded admin web UI gives you live relay state, per-token quotas, a Configuration Studio with presets and quick knobs, request tracing, live logs, and metrics, in the same single binary. Built with **Svelte 5 + Tailwind CSS v4** and self-hosted **Geist** typography, it is compiled into the binary at build time (`//go:embed all:dist`) with zero runtime Node.js or external CDN dependencies.
 
 ## Access
 
-Open `http://127.0.0.1:3457/admin` (your `LISTEN_ADDR`). You land on the login
-page unless `ADMIN_TOKEN` is unset.
+Open `http://127.0.0.1:3457/admin` (your `LISTEN_ADDR`). You land on the login page unless `ADMIN_TOKEN` is unset.
 
 | Setting | Behavior |
 |---|---|
-| `ADMIN_TOKEN` set | Login required: `ADMIN_TOKEN` is both the bearer token for `/admin/reload` and the login password. Enter it on the login page; a signed `HttpOnly` + `SameSite=Strict` cookie unlocks the dashboard for 24h (`Secure` is added only when the login arrived over TLS or `X-Forwarded-Proto: https` — the listen address does not matter). Failed logins are rate-limited per IP (5 fails → 1 minute lockout). |
-| `ADMIN_TOKEN` unset | Dashboard is open (legacy behavior, matching `/admin/reload`); a startup warning notes the token is unset, and the in-page banner reminds you to set it when the proxy is reachable beyond loopback. The **sensitive routes additionally require a loopback client** in this mode: Config and Logs (secrets), the token actions (add/remove/test/test-all), the smoke test, diagnostics, the mode switch, and the login-wizard/playground endpoints, so a remotely reachable proxy cannot leak or rewrite its `.env`, mutate the pool, or switch modes without the token. |
+| `ADMIN_TOKEN` set | Login required: `ADMIN_TOKEN` is both the bearer token for `/admin/reload` and the login password. Enter it on the login page; a signed `HttpOnly` + `SameSite=Strict` cookie unlocks the dashboard for 24h (`Secure` is added only when the login arrived over TLS or `X-Forwarded-Proto: https`). Failed logins are rate-limited per IP (5 fails → 1 minute lockout). |
+| `ADMIN_TOKEN` unset | Dashboard is open (legacy behavior, matching `/admin/reload`); a startup warning notes the token is unset, and the in-page badge reminds you to set it when the proxy is reachable beyond loopback. The **sensitive routes additionally require authentication when configured**, protecting secrets, token mutations, and runtime reconfiguration. |
 
-The session cookie is stateless (HMAC-signed expiry, per-process random key):
-restarting the proxy signs everyone out, which is the safe default.
+The session cookie is stateless (HMAC-signed expiry, per-process random key): restarting the proxy signs everyone out, which is the safe default.
 
-## Pages
+## Pages & Capabilities
 
-- **Overview**: pooled/bridge mode, model count, uptime, safe-mode flag, and
-  per-token cards: session status, ban/429 risk level (`low`/`moderate`/`high`/
-  `critical`), active runs, requests, 24h messages vs `MAX_MESSAGES_PER_DAY`,
-  queue position, cooldown end, transient retries. Refreshes every 5s. At the
-  top, a **Smoke test** box sends one real chat through the pool (`POST
-  /admin/smoke`) and reports status, the token used, latency, and a content
-  preview, proving the whole path end to end.
-- **Tokens**: the same per-token state in detail (session instance id) plus
-  the live **per-model session quota** table (`limit`, `recent`, `period`,
-  `reset`, `entitlement`) parsed from the last upstream admission, with
-  **usage bars and reset countdowns** ("resets in 4h 12m", amber at ≥80%).
-  Refreshes every 30s so countdowns stay honest. Per-token actions:
-  - **Test**: a zero-cost upstream GET probe through that token, surfacing
-    validity/network errors and live quota, the same idea as 9router's
-    per-connection Test button.
-  - **Unlock**: clears a cooldown / rate-limit lock / ban window (only shown
-    while a lock is active; `hx-confirm` guards it. Upstream locks are
-    usually correct, and unlocking a banned token resumes traffic).
-  - **Finish runs**: finishes the token's active runs without touching
-    in-flight requests.
-  The pool is **runtime-mutable**: no restart for key changes. An **Add
-  token** form (`cb_...`) appends to the live pool, **Remove last token**
-  drops the highest-index token, **Test all tokens** probes every pooled
-  token with a zero-cost GET probe, and **Switch to bridge mode** empties the
-  pool. These map to `POST /admin/tokens/add`, `/admin/tokens/remove`,
-  `/admin/tokens/test-all`, and `/admin/mode`. Every mutation is persisted
-  to `AUTH_TOKENS` in `.env` and the config is reloaded, so changes survive
-  a restart. Only the *last* token can be removed from the UI (removing a
-  middle token would shift indices under in-flight leases). Reorder
-  `AUTH_TOKENS` in Config for anything else. These actions are gated like
-  Config (loopback-only when `ADMIN_TOKEN` is unset).
-- **Models**: the live registry catalog, listing every model id with the upstream
-  agent that serves it, plus the `MODEL_ALIASES` table.
-- **Traces**: recent chat requests and their routing outcome, with token chosen,
-  model, status (`ok`/`error` + class `rate_limited`/`banned`/`waiting_room`/
-  `upstream`), duration, and error string. This is the ban-avoidance
-  observability view: see 429/ban events as they happen. Refreshes every 3s.
-- **Config**: a raw `.env` editor next to the effective-value table (secrets
-  redacted to set/unset + counts). Save validates with the same pipeline as
-  startup (durations, URLs, `Config.Validate`) and hot-reloads via the atomic
-  config swap; invalid input is rejected **with the previous file restored**.
-  When no `.env` exists yet, the editor is seeded with a commented template of
-  every key and its default.
-- **Setup**: a three-step wizard from zero to a working client, covering these
-  steps:
-  1. **Tokens**: add a token (in bridge mode the step is "add your token";
-     it switches the proxy to pooled mode), remove the last, or test all.
-  2. **Verify**: a **smoke test** (one real chat, `POST /admin/smoke`; in
-     bridge mode it needs a client token in the payload) plus a **Full
-     diagnostics** button (`POST /admin/diag`) that renders the same checks
-     as `-doctor`: config state, DNS + TCP reachability, registry count, and
-     a zero-cost validity probe per token.
-  3. **Connect your client**: copy-paste snippets generated from the
-     effective config (base URL, mode, key hint, first catalog model),
-     plus the full model list as chips.
-- **Playground**: a chat box that sends real requests through the pool
-  (`POST /admin/playground/chat`), useful for testing a model pick without
-  a client. Gated like the other sensitive routes.
-- **Login wizard**: on the Setup page, add a token via the headless login
-  flow (`POST /admin/login/start` → poll `GET /admin/login/status`): the
-  proxy starts the upstream login, shows the auth URL and short code, and
-  stores the token once the poll confirms it.
-- **Logs**: the last 200 records from an in-memory ring that mirrors the
-  process logger (stderr and any `LOG_FILE` still receive everything). No log
-  file, no docker access needed. Refreshes every 3s.
-- **Metrics**: sampled counter trends (requests and transient retries as
-  server-rendered SVG sparklines; fingerprint rotations as a bare value). The
-  full Prometheus exposition with per-token gauges stays at `/metrics`.
+- **Overview**: Live status header with active mode (`Pooled`, `Hybrid`, `Bridge`), registered model count, process uptime, and safe mode status badge. Features a 1-click **End-to-End Smoke Test** (sends a real request through the proxy and renders timing breakdown and preview) alongside live token cards detailing session status, risk scores, daily messages vs `MAX_MESSAGES_PER_DAY`, queue position, and transient retries.
+- **Tokens & Quotas**: Comprehensive token pool management featuring:
+  - **Always-Visible 3-Mode Controller**: Toggle seamlessly between `Pooled`, `Hybrid`, and `Bridge` modes.
+  - **Per-Model Quotas Table**: Displays live limits, recent usage, period reset times, and entitlements with color-coded usage bars.
+  - **Runtime Token Actions**: Add Token to Pool form (`cb_...`), **Test** (zero-cost upstream validity probe), **Unlock** (clears cooldown/locks), **Finish runs**, **Remove last token**, and **Test all tokens**.
+  - All token additions and mode switches are automatically persisted to `.env` without requiring a server restart.
+- **Models Registry**: Live catalog of all available models, upstream agent mappings, default model badges (for `deepseek/deepseek-v4-flash`), and configured `MODEL_ALIASES`. Model IDs and aliases include 1-click copy actions.
+- **Live Traces**: In-memory ring buffer (last 200 requests) showing timestamp, chosen token, requested model, status (`ok`, `rate_limited`, `banned`, `upstream`), latency, and error breakdown. Refreshes every 3s.
+- **Model Playground**: Interactive prompt console with real-time **Server-Sent Events (SSE) chat streaming**, model picker, shortcut support (`Ctrl+Enter`), and collapsible thinking/reasoning blocks.
+- **Configuration Studio**: Visual hot-reloading `.env` management studio:
+  - **One-Click Presets**: *🛡️ Stealth Anti-Ban*, *⚡ Maximum Speed (0 Jitter)*, *🐞 Deep Debugging*, *🔄 Hybrid Relay*.
+  - **Interactive Quick Knobs**: 1-click boolean switches (`SAFE_MODE`, `HYBRID_MODE`, `DEBUG_DUMP`), enum pills (`COST_MODE`, `TLS_FINGERPRINT`, `LOG_LEVEL`), and duration chips (`REQUEST_JITTER`, `ROTATION_INTERVAL`, `REQUEST_TIMEOUT`) that synchronize with the `.env` editor in real-time.
+  - **Hover & Click Quick Info Cards**: Explains every parameter, category, and default fallback value.
+  - **Atomic Validation**: Saves are validated against strict schema rules with automatic rollback on error.
+- **Client Setup & Tool Integration**:
+  - **Universal Configuration**: Clickable 1-click copy tiles for Base URL, API Key, and Default Model.
+  - **Tool-Specific Snippets**: Ready-to-use configuration blocks for **OpenCode**, **Continue / Cline**, **aider**, **9router**, and **cURL**.
+  - **OAuth Login Wizard**: Headless token generator (`POST /admin/login/start` → poll `GET /admin/login/status`) with browser auth URL.
+  - **Diagnostics Suite**: One-click system diagnostic check covering configuration, port availability, DNS, TLS, and token health.
+- **In-Memory Logs**: Live circular buffer (last 200 records) mirroring the structured process logger with level filtering (`ALL`, `INFO`, `DEBUG`, `WARN`, `ERROR`), real-time search, and key-value field tags.
+- **Telemetry & Metrics**: Stat cards with SVG trend sparklines for Requests Served, Transient Retries, and Fingerprint Rotations, plus direct link to Prometheus `/metrics`.
 
-## Docker caveat
+## Docker Usage
 
-The config editor writes `./.env` **relative to the proxy's working
-directory**. Inside the container that is the image workdir, not your host
-directory, so in Docker, prefer environment variables in `docker-compose.yml`
-(or bind-mount your `.env`) and use the dashboard's Config page read-only.
-The runtime token actions (Add token, Remove last, mode switch) persist to the
-same `./.env` path, so they only survive restarts when `.env` is bind-mounted
-(the live pool change still applies immediately). The read-only pages
-(Overview/Models/Traces/Logs/Metrics), the smoke test, and diagnostics work
-fine in Docker. The Tokens page works too, but its mutating actions persist
-to `./.env`, which only survives restarts when bind-mounted.
+The config editor writes `./.env` **relative to the proxy's working directory**. Inside Docker, ensure your `.env` is bind-mounted if you want mutations from the dashboard to persist across container restarts.
 
-## Hardening
+```yaml
+services:
+  freebuff-proxy:
+    image: ghcr.io/trefeon/freebuff-proxy:latest
+    ports:
+      - "3457:3457"
+    volumes:
+      - ./.env:/app/.env
+```
 
-1. **Set `ADMIN_TOKEN`**: a random string. Unauthenticated mode is only safe
-   when the proxy is bound to loopback and unreachable from the network.
-2. Keep `LISTEN_ADDR` on loopback unless you are deliberately exposing the
-   proxy; if you expose it, put TLS in front (reverse proxy). The cookie and
-   admin traffic would otherwise cross the wire in the clear.
-3. The dashboard never renders token values: `AUTH_TOKENS`, `API_KEYS`,
-   and `ADMIN_TOKEN` show only set/unset + counts. The
-   `.env` file is written atomically with mode `0600`.
-4. Saves (and `/admin/reload`) re-apply the JSON config file the proxy was
-   started with (`-config`), so JSON overrides survive a dashboard save.
+## Hardening Recommendations
 
-## What is deliberately not in v1
+1. **Set `ADMIN_TOKEN`**: Provide a strong secret token to require password authentication for the web dashboard.
+2. Keep `LISTEN_ADDR` on `127.0.0.1:3457` (loopback) unless deliberately exposing the proxy behind a reverse proxy with TLS termination.
+3. Secret masking: The dashboard masks sensitive values (`AUTH_TOKENS`, `API_KEYS`, `ADMIN_TOKEN`) in the Effective Configuration table.
 
-- Multi-user/role separation: one `ADMIN_TOKEN`, one session model.
-- Removing a *middle* pooled token from the UI: only the last token can be
-  removed (see the Tokens page note); reorder `AUTH_TOKENS` in Config for
-  anything else.
-
-Related: [README](../README.md), [Getting Started](getting-started.md),
-[Client Integration](client-integration.md), [9router Integration](9router-integration.md).
+---
+Related: [README](../../README.md), [Getting Started](getting-started.md), [Client Integration](client-integration.md), [9router Integration](9router-integration.md).
