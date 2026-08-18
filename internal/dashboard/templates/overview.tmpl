@@ -8,60 +8,60 @@
     <span class="pill pill-{{if .InBridge}}bridge{{else if eq .Mode "hybrid"}}hybrid{{else}}pool{{end}}">{{.Mode}}</span>
     <span class="pill">{{.ModelCount}} models</span>
     <span class="pill">up {{.Uptime}}</span>
-    {{if .SafeMode}}<span class="pill pill-safe">safe mode</span>{{end}}
+    {{if .SafeMode}}<span class="pill pill-teal">safe mode</span>{{end}}
   </div>
 </section>
 
-<section class="card smoke-card">
-  <h2>Smoke test</h2>
-  <p class="muted">Send one real chat through the proxy — proves the whole path end to end.</p>
+<article class="card smoke-card">
+  <h2 class="card-title">Smoke test</h2>
+  <p class="card-desc">Send one real chat through the proxy — proves the whole path end to end.</p>
   <form hx-post="/admin/smoke" hx-target="#smoke-result" hx-swap="innerHTML" class="smoke-form">
     <label for="smoke-model" class="visually-hidden">Model</label>
-    <select id="smoke-model" name="model">
+    <select id="smoke-model" name="model" aria-label="Model" class="input">
       {{range .Models}}<option value="{{.}}">{{.}}</option>{{end}}
     </select>
     <label for="smoke-prompt" class="visually-hidden">Prompt</label>
-    <input type="text" id="smoke-prompt" name="prompt" value="ping" maxlength="200" placeholder="prompt">
-    <button type="submit">Run test</button>
+    <input type="text" id="smoke-prompt" name="prompt" value="ping" maxlength="200" placeholder="Enter prompt..." class="input">
+    <button type="submit" class="action-btn btn-amber">Run test</button>
   </form>
   <div id="smoke-result"></div>
-</section>
+</article>
 
 {{if .InBridge}}
 <article class="card bridge-card">
-  <h2>Bridge mode</h2>
-  <p>No <code>AUTH_TOKENS</code> configured — upstream tokens are relayed per client request ({{.BridgeTokens}} active bridge client{{if ne .BridgeTokens 1}}s{{end}}). Session state and quota are per-client and not shown here.</p>
+  <h2 class="card-title">Bridge mode</h2>
+  <p class="card-desc">No <code class="code-pill">AUTH_TOKENS</code> configured — upstream tokens are relayed per client request ({{.BridgeTokens}} active bridge client{{if ne .BridgeTokens 1}}s{{end}}). Session state and quota are per-client and not shown here.</p>
 </article>
 {{else if not .HasTokens}}
 <article class="card empty-card">
-  <h2>No tokens configured</h2>
-  <p>Add <code>AUTH_TOKENS</code> in <a href="/admin/config">Config</a> to start the pooled relay.</p>
+  <h2 class="card-title">No Tokens Configured</h2>
+  <p class="card-desc">Add <code class="code-pill">AUTH_TOKENS</code> in <a href="/admin/config" class="link-amber">Config</a> or use the <a href="/admin/setup" class="link-amber">Setup Wizard</a> to start the pooled relay.</p>
 </article>
 {{else}}
 <div class="token-grid">
 {{range .Tokens}}
   <article class="card token-card" data-risk="{{.RiskLevel}}">
     <header class="token-head">
-      <span class="state-dot dot-{{.RiskLevel}}"></span>
+      <span class="state-dot dot-{{.RiskLevel}}" title="Risk level: {{.RiskLevel}}"></span>
       <strong class="token-name">Token {{.Index}}</strong>
       <span class="pill risk-{{.RiskLevel}}">{{.RiskLevel}}</span>
-      {{if .HasStanding}}<span class="pill standing-pill" title="Account access level (standing)">trust {{.StandingLabel}} · {{printf "%.0f" .StandingScore}}/100{{if .StandingNextLevel}} → {{.StandingNextLevel}}{{end}}</span>{{end}}
+      {{if .HasStanding}}<span class="pill standing-pill" title="Account access standing score">trust {{.StandingLabel}} · {{printf "%.0f" .StandingScore}}/100{{if .StandingNextLevel}} → {{.StandingNextLevel}}{{end}}</span>{{end}}
     </header>
-    <dl class="kv">
-      <div><dt>session</dt><dd class="mono">{{.SessionStatus}}</dd></div>
-      <div><dt>active runs</dt><dd class="mono">{{.ActiveRuns}}</dd></div>
-      <div><dt>requests</dt><dd class="mono">{{.Requests}}</dd></div>
-      <div><dt>messages 24h</dt><dd class="mono">{{.Messages24h}}{{if gt .DailyLimit 0}} / {{.DailyLimit}}{{end}}</dd></div>
-      {{if gt .QueueDepth 0}}<div><dt>queue</dt><dd class="mono">{{.QueuePosition}}/{{.QueueDepth}}</dd></div>{{end}}
-      {{if .CooldownActive}}<div><dt>cooldown until</dt><dd class="mono">{{.CooldownUntil}}</dd></div>{{end}}
-      {{if gt .TransientRetries 0}}<div><dt>transient retries</dt><dd class="mono">{{.TransientRetries}}</dd></div>{{end}}
+    <dl class="kv kv-4">
+      <div class="stat-box"><dt class="stat-label">session</dt><dd class="stat-value mono">{{.SessionStatus}}</dd></div>
+      <div class="stat-box"><dt class="stat-label">active runs</dt><dd class="stat-value mono">{{.ActiveRuns}}</dd></div>
+      <div class="stat-box"><dt class="stat-label">requests</dt><dd class="stat-value mono">{{.Requests}}</dd></div>
+      <div class="stat-box"><dt class="stat-label">messages 24h</dt><dd class="stat-value mono">{{.Messages24h}}{{if gt .DailyLimit 0}} / {{.DailyLimit}}{{end}}</dd></div>
+      {{if gt .QueueDepth 0}}<div class="stat-box"><dt class="stat-label">queue</dt><dd class="stat-value mono">{{.QueuePosition}}/{{.QueueDepth}}</dd></div>{{end}}
+      {{if .CooldownActive}}<div class="stat-box"><dt class="stat-label">cooldown until</dt><dd class="stat-value mono">{{.CooldownUntil}}</dd></div>{{end}}
+      {{if gt .TransientRetries 0}}<div class="stat-box"><dt class="stat-label">transient retries</dt><dd class="stat-value mono">{{.TransientRetries}}</dd></div>{{end}}
     </dl>
     {{if gt .DailyLimit 0}}
-    <div class="usage"><div class="usage-bar" style="width: {{.UsagePct}}%"></div></div>
-    <p class="muted usage-label">{{.UsagePct}}% of daily limit</p>
+    <div class="usage {{if ge .UsagePct 80}}usage-near{{end}}"><div class="usage-bar" style="width: {{.UsagePct}}%"></div></div>
+    <p class="progress-label">{{.UsagePct}}% of daily limit</p>
     {{end}}
   </article>
-{{end}}
 </div>
+{{end}}
 {{end}}
 {{end}}

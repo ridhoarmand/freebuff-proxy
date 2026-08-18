@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#11131a">
+<meta name="theme-color" content="#0B101A">
 <meta name="htmx-config" content='{"selfRequestsOnly":true,"allowScriptTags":false}'>
 <title>freebuff-proxy · admin</title>
 <link rel="stylesheet" href="/admin/assets/pico.min.css">
@@ -17,6 +17,9 @@
       <a href="/admin" class="brand">freebuff-proxy <span class="brand-sub">admin</span></a>
       {{if .HasUpdate}}<a href="{{.UpdateURL}}" class="update-badge" title="new release available">update: {{.LatestVersion}}</a>{{end}}
     </div>
+    <button class="hamburger" aria-label="Toggle menu" onclick="document.querySelector('.nav-menu').classList.toggle('open')">
+      <span></span><span></span><span></span>
+    </button>
     <ul class="nav-menu" role="menubar">
       <li role="none"><a href="/admin" role="menuitem" class="nav-link{{if eq .Page "overview"}} active{{end}}"><span class="nav-icon" aria-hidden="true">⊞</span> Overview</a></li>
       <li role="none"><a href="/admin/tokens" role="menuitem" class="nav-link{{if eq .Page "tokens"}} active{{end}}"><span class="nav-icon" aria-hidden="true">🔑</span> Tokens</a></li>
@@ -59,6 +62,20 @@
   }
   convertAll();
   setInterval(convertAll, 30000);
+})();
+</script>
+<script>
+// Keyboard navigation: 1-9 jump to nav links
+(function () {
+  var links = document.querySelectorAll('.nav-link');
+  document.addEventListener('keydown', function (e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+    var n = parseInt(e.key, 10);
+    if (n >= 1 && n <= links.length) {
+      e.preventDefault();
+      links[n - 1].click();
+    }
+  });
 })();
 </script>
 </body>
