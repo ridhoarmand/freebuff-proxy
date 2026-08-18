@@ -13,33 +13,28 @@
   import Metrics from './lib/pages/Metrics.svelte';
   import Login from './lib/pages/Login.svelte';
 
-  let activeTab = $state('overview');
+  function getInitialTab() {
+    if (typeof window === 'undefined') return 'overview';
+    const path = window.location.pathname;
+    const hash = window.location.hash.replace('#', '');
+    if (path === '/admin/login' || hash === 'login') return 'login';
+    if (hash) return hash;
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length >= 2 && segments[0] === 'admin' && segments[1]) {
+      return segments[1];
+    }
+    return 'overview';
+  }
+
+  let activeTab = $state(getInitialTab());
   let versionInfo = $state(null);
 
   function syncTabFromURL() {
-    const path = window.location.pathname;
-    const hash = window.location.hash.replace('#', '');
-    
-    if (path === '/admin/login' || hash === 'login') {
-      activeTab = 'login';
-      return;
-    }
-
-    if (hash) {
-      activeTab = hash;
-      return;
-    }
-
-    const segments = path.split('/').filter(Boolean);
-    if (segments.length >= 2 && segments[0] === 'admin') {
-      activeTab = segments[1] || 'overview';
-    } else {
-      activeTab = 'overview';
-    }
+    activeTab = getInitialTab();
   }
 
   $effect(() => {
-    if (activeTab !== 'login') {
+    if (activeTab !== 'login' && window.location.hash.replace('#', '') !== activeTab) {
       window.location.hash = activeTab;
     }
   });

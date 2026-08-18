@@ -2,11 +2,12 @@
   import { onMount, onDestroy } from 'svelte';
   import {
     Settings, Save, RefreshCw, Info, Check, Shield, Zap, Bug,
-    Sliders, Code, Search, Sparkles, AlertCircle, HelpCircle, ArrowRight
+    Sliders, Code, Search, Sparkles, AlertCircle, HelpCircle, ArrowRight, X
   } from '@lucide/svelte';
   import PageHeader from '../components/PageHeader.svelte';
   import StatusBadge from '../components/StatusBadge.svelte';
   import Alert from '../components/Alert.svelte';
+  import EmptyState from '../components/EmptyState.svelte';
   import { fetchAPI } from '../utils/api.js';
 
   let data = $state(null);
@@ -19,11 +20,11 @@
   let originalContent = $state('');
   let hasUnsavedChanges = $derived(envContent !== originalContent && envContent !== '');
 
-  // UI view state: 'visual' or 'raw'
-  let activeView = $state('visual'); // 'visual' | 'split' | 'raw'
   let searchQuery = $state('');
   let selectedSettingKey = $state('SAFE_MODE');
   let hoveredSettingKey = $state(null);
+  let presetToast = $state(null);
+  let presetToastTimeout = null;
 
   const settingDocs = {
     SAFE_MODE: {
@@ -223,6 +224,35 @@
     }
   ];
 
+  function getCategoryBadgeStyle(category) {
+    switch (category) {
+      case 'Stealth & Safety':
+        return 'bg-[var(--fp-teal)]/10 text-[var(--fp-teal)] border border-[var(--fp-teal)]/25';
+      case 'Routing & Pool':
+        return 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/25';
+      case 'Logging & Debug':
+        return 'bg-purple-500/10 text-purple-400 border border-purple-500/25';
+      case 'Limits':
+      case 'Timeouts':
+        return 'bg-[var(--fp-amber)]/10 text-[var(--fp-amber)] border border-[var(--fp-amber)]/25';
+      case 'Security':
+        return 'bg-rose-500/10 text-rose-400 border border-rose-500/25';
+      case 'Network':
+      case 'Resilience':
+      default:
+        return 'bg-sky-500/10 text-sky-400 border border-sky-500/25';
+    }
+  }
+
+  function applyPreset(preset) {
+    preset.apply();
+    if (presetToastTimeout) clearTimeout(presetToastTimeout);
+    presetToast = `Applied preset: ${preset.label}`;
+    presetToastTimeout = setTimeout(() => {
+      presetToast = null;
+    }, 3500);
+  }
+
   // Helper to read current value of a key from envContent or fallback to effective
   function getEnvValue(key) {
     const regex = new RegExp(`^\\s*${key}=(.*)$`, 'm');
@@ -296,6 +326,15 @@
     }
   }
 
+  function handleKeyDown(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      if (hasUnsavedChanges && !saving) {
+        saveConfig();
+      }
+    }
+  }
+
   // Filtered settings for quick inspector
   let filteredSettings = $derived(() => {
     const list = data?.effective || [];
@@ -320,10 +359,13 @@
   onMount(() => {
     fetchData();
     window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('keydown', handleKeyDown);
   });
 
   onDestroy(() => {
     window.removeEventListener('beforeunload', handleBeforeUnload);
+    window.removeEventListener('keydown', handleKeyDown);
+    if (presetToastTimeout) clearTimeout(presetToastTimeout);
   });
 </script>
 
@@ -351,6 +393,25 @@
     />
   {/if}
 
+  <!-- Preset Applied Micro-Toast Alert -->
+  {#if presetToast}
+    <div class="p-3 rounded-lg bg-[var(--fp-amber)]/15 border border-[var(--fp-amber)]/30 text-white text-xs flex items-center justify-between animate-fadeIn">
+      <div class="flex items-center gap-2">
+        <Sparkles size={15} class="text-[var(--fp-amber)]" />
+        <span class="font-semibold">{presetToast}</span>
+        <span class="text-[11px] text-[var(--fp-muted)]">(Press Ctrl+S to save)</span>
+      </div>
+      <button
+        type="button"
+        onclick={() => presetToast = null}
+        class="text-[var(--fp-dim)] hover:text-white transition-colors"
+        aria-label="Dismiss notification"
+      >
+        <X size={14} />
+      </button>
+    </div>
+  {/if}
+
   <!-- Quick Presets Bar -->
   <div class="fp-card p-4 space-y-3">
     <div class="flex items-center justify-between">
@@ -364,8 +425,8 @@
       {#each presets as preset}
         <button
           type="button"
-          onclick={() => preset.apply()}
-          class="p-3 rounded-lg fp-inset hover:border-[var(--fp-amber)]/40 transition-all text-left group flex flex-col justify-between"
+          onclick={() => applyPreset(preset)}
+          class="p-3 rounded-lg fp-inset hover:border-[var(--fp-amber)]/40 focus-visible:ring-2 focus-visible:ring-[var(--fp-amber)] focus-visible:outline-none transition-all text-left group flex flex-col justify-between"
         >
           <div>
             <div class="text-xs font-bold text-white group-hover:text-[var(--fp-amber)] transition-colors">{preset.label}</div>
@@ -398,102 +459,126 @@
               type="search"
               bind:value={searchQuery}
               placeholder="Search setting..."
-              class="fp-input fp-input-mono text-xs pl-8 py-1.5"
+              class="fp-input fp-input-mono text-xs pl-8 pr-7 py-1.5 focus-visible:ring-2 focus-visible:ring-[var(--fp-amber)]"
             />
             <Search size={13} class="absolute left-2.5 top-2 text-[var(--fp-dim)]" />
+            {#if searchQuery}
+              <button
+                type="button"
+                onclick={() => searchQuery = ''}
+                class="absolute right-2 top-2 text-[var(--fp-dim)] hover:text-white transition-colors"
+                aria-label="Clear search"
+              >
+                <X size={13} />
+              </button>
+            {/if}
           </div>
         </div>
 
         <!-- Settings List -->
         <div class="space-y-2 max-h-[520px] overflow-y-auto pr-1">
-          {#each filteredSettings() as kv}
-            {@const doc = settingDocs[kv.key]}
-            {@const curVal = getEnvValue(kv.key)}
-            {@const isSelected = selectedSettingKey === kv.key}
-            <div
-              role="button"
-              tabindex="0"
-              onclick={() => selectedSettingKey = kv.key}
-              onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectedSettingKey = kv.key; }}
-              onmouseenter={() => hoveredSettingKey = kv.key}
-              onmouseleave={() => hoveredSettingKey = null}
-              class="p-3 rounded-lg border transition-all cursor-pointer text-left
-                {isSelected
-                  ? 'bg-[var(--fp-amber)]/8 border-[var(--fp-amber)]/40 shadow-sm'
-                  : 'fp-inset hover:border-[var(--fp-border-bright)]'}"
-            >
-              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <!-- Name & Key -->
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="font-mono text-xs font-bold text-white truncate">{kv.key}</span>
-                  {#if doc?.category}
-                    <span class="text-[10px] px-1.5 py-0.2 rounded bg-[var(--fp-surface-3)] text-[var(--fp-dim)] font-sans">
-                      {doc.category}
-                    </span>
-                  {/if}
-                  {#if isSelected}
-                    <span class="text-[10px] text-[var(--fp-amber)] font-semibold">● Active</span>
-                  {/if}
-                </div>
+          {#if filteredSettings().length === 0}
+            <div class="py-10 text-center space-y-3">
+              <Search size={24} class="mx-auto text-[var(--fp-dim)] opacity-60" />
+              <p class="text-xs text-[var(--fp-muted)]">No configuration settings match "<span class="text-white font-mono">{searchQuery}</span>"</p>
+              <button
+                type="button"
+                onclick={() => searchQuery = ''}
+                class="fp-btn-secondary text-xs"
+              >
+                Clear Search Filter
+              </button>
+            </div>
+          {:else}
+            {#each filteredSettings() as kv}
+              {@const doc = settingDocs[kv.key]}
+              {@const curVal = getEnvValue(kv.key)}
+              {@const isSelected = selectedSettingKey === kv.key}
+              <div
+                role="button"
+                tabindex="0"
+                onclick={() => selectedSettingKey = kv.key}
+                onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectedSettingKey = kv.key; }}
+                onmouseenter={() => hoveredSettingKey = kv.key}
+                onmouseleave={() => hoveredSettingKey = null}
+                class="p-3 rounded-lg border transition-all cursor-pointer text-left focus-visible:ring-2 focus-visible:ring-[var(--fp-amber)] focus-visible:outline-none
+                  {isSelected
+                    ? 'bg-[var(--fp-amber)]/8 border-[var(--fp-amber)]/40 shadow-sm'
+                    : 'fp-inset hover:border-[var(--fp-border-bright)]'}"
+              >
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <!-- Name & Key -->
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="font-mono text-xs font-bold text-white truncate">{kv.key}</span>
+                    {#if doc?.category}
+                      <span class="text-[10px] px-1.5 py-0.5 rounded font-sans font-medium {getCategoryBadgeStyle(doc.category)}">
+                        {doc.category}
+                      </span>
+                    {/if}
+                    {#if isSelected}
+                      <span class="text-[10px] text-[var(--fp-amber)] font-semibold">● Active</span>
+                    {/if}
+                  </div>
 
-                <!-- Quick Interactive Controls -->
-                <div class="flex items-center gap-1.5 shrink-0">
-                  {#if doc?.type === 'boolean'}
-                    <!-- Boolean Toggle Switch -->
-                    <div class="flex items-center rounded-lg fp-inset p-0.5">
-                      <button
-                        type="button"
-                        onclick={(e) => { e.stopPropagation(); setEnvValue(kv.key, 'true'); }}
-                        class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold transition-all
-                          {curVal === 'true' ? 'bg-[var(--fp-teal)] text-[#1A1A1A]' : 'text-[var(--fp-muted)] hover:text-white'}"
-                      >
-                        true
-                      </button>
-                      <button
-                        type="button"
-                        onclick={(e) => { e.stopPropagation(); setEnvValue(kv.key, 'false'); }}
-                        class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold transition-all
-                          {curVal === 'false' ? 'bg-[var(--fp-red)] text-white' : 'text-[var(--fp-muted)] hover:text-white'}"
-                      >
-                        false
-                      </button>
-                    </div>
-                  {:else if doc?.type === 'enum' || doc?.type === 'preset'}
-                    <!-- Quick Pill Selector -->
-                    <div class="flex flex-wrap items-center gap-1">
-                      {#each doc.options?.slice(0, 4) || [] as opt}
+                  <!-- Quick Interactive Controls -->
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    {#if doc?.type === 'boolean'}
+                      <!-- Boolean Toggle Switch -->
+                      <div class="flex items-center rounded-lg fp-inset p-0.5">
                         <button
                           type="button"
-                          onclick={(e) => { e.stopPropagation(); setEnvValue(kv.key, opt); }}
-                          class="px-1.5 py-0.5 rounded text-[10px] font-mono transition-all
-                            {curVal === opt
-                              ? 'bg-[var(--fp-amber)] text-[#1A1A1A] font-bold'
-                              : 'fp-inset text-[var(--fp-muted)] hover:text-white'}"
+                          onclick={(e) => { e.stopPropagation(); setEnvValue(kv.key, 'true'); }}
+                          class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold transition-all focus-visible:ring-1 focus-visible:ring-[var(--fp-teal)]
+                            {curVal === 'true' ? 'bg-[var(--fp-teal)] text-[#1A1A1A]' : 'text-[var(--fp-muted)] hover:text-white'}"
                         >
-                          {opt}
+                          true
                         </button>
-                      {/each}
-                    </div>
-                  {:else if kv.secret}
-                    <span class="px-2 py-0.5 rounded fp-inset text-[var(--fp-muted)] font-mono text-[11px]">
-                      {kv.value}
-                    </span>
-                  {:else}
-                    <span class="text-xs font-mono font-bold text-[var(--fp-teal)] tabular-nums">
-                      {curVal || kv.value || '—'}
-                    </span>
-                  {/if}
+                        <button
+                          type="button"
+                          onclick={(e) => { e.stopPropagation(); setEnvValue(kv.key, 'false'); }}
+                          class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold transition-all focus-visible:ring-1 focus-visible:ring-[var(--fp-red)]
+                            {curVal === 'false' ? 'bg-[var(--fp-red)] text-white' : 'text-[var(--fp-muted)] hover:text-white'}"
+                        >
+                          false
+                        </button>
+                      </div>
+                    {:else if doc?.type === 'enum' || doc?.type === 'preset'}
+                      <!-- Quick Pill Selector -->
+                      <div class="flex flex-wrap items-center gap-1">
+                        {#each doc.options?.slice(0, 4) || [] as opt}
+                          <button
+                            type="button"
+                            onclick={(e) => { e.stopPropagation(); setEnvValue(kv.key, opt); }}
+                            class="px-1.5 py-0.5 rounded text-[10px] font-mono transition-all focus-visible:ring-1 focus-visible:ring-[var(--fp-amber)]
+                              {curVal === opt
+                                ? 'bg-[var(--fp-amber)] text-[#1A1A1A] font-bold'
+                                : 'fp-inset text-[var(--fp-muted)] hover:text-white'}"
+                          >
+                            {opt}
+                          </button>
+                        {/each}
+                      </div>
+                    {:else if kv.secret}
+                      <span class="px-2 py-0.5 rounded fp-inset text-[var(--fp-muted)] font-mono text-[11px]">
+                        {kv.value}
+                      </span>
+                    {:else}
+                      <span class="text-xs font-mono font-bold text-[var(--fp-teal)] tabular-nums">
+                        {curVal || kv.value || '—'}
+                      </span>
+                    {/if}
+                  </div>
                 </div>
-              </div>
 
-              <!-- Quick preview description -->
-              {#if doc?.desc}
-                <p class="text-[11px] text-[var(--fp-muted)] mt-1.5 line-clamp-1">
-                  {doc.desc}
-                </p>
-              {/if}
-            </div>
-          {/each}
+                <!-- Quick preview description -->
+                {#if doc?.desc}
+                  <p class="text-[11px] text-[var(--fp-muted)] mt-1.5 line-clamp-1">
+                    {doc.desc}
+                  </p>
+                {/if}
+              </div>
+            {/each}
+          {/if}
         </div>
       </div>
 
@@ -522,7 +607,7 @@
                 <button
                   type="button"
                   onclick={() => setEnvValue(selectedSettingKey, opt)}
-                  class="px-2 py-0.5 rounded text-xs font-mono transition-all
+                  class="px-2 py-0.5 rounded text-xs font-mono transition-all focus-visible:ring-1 focus-visible:ring-[var(--fp-amber)]
                     {getEnvValue(selectedSettingKey) === opt
                       ? 'bg-[var(--fp-amber)] text-[#1A1A1A] font-bold shadow-sm'
                       : 'fp-btn-secondary text-[var(--fp-muted)]'}"
@@ -542,7 +627,7 @@
         <div class="flex items-center justify-between border-b border-[var(--fp-border)] pb-3">
           <div>
             <h2 class="text-base font-semibold text-white">.env Editor</h2>
-            <p class="text-xs text-[var(--fp-muted)] mt-0.5">Live file synced with quick knobs above.</p>
+            <p class="text-xs text-[var(--fp-muted)] mt-0.5">Live file synced with quick knobs above. (<kbd class="px-1 py-0.5 rounded bg-[var(--fp-surface-3)] text-[10px] font-mono text-[var(--fp-dim)]">Ctrl+S</kbd> to save)</p>
           </div>
           <div class="flex items-center gap-2">
             <button
@@ -562,7 +647,7 @@
             rows="22"
             spellcheck="false"
             required
-            class="fp-input fp-input-mono flex-1 text-xs leading-relaxed p-3.5 font-mono"
+            class="fp-input fp-input-mono flex-1 text-xs leading-relaxed p-3.5 font-mono focus-visible:ring-2 focus-visible:ring-[var(--fp-amber)]"
             placeholder="# Configuration variables..."
           ></textarea>
 
