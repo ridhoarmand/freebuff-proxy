@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0b0d14">
+<meta name="theme-color" content="#0B101A">
 <meta name="htmx-config" content='{"selfRequestsOnly":true,"allowScriptTags":false}'>
 <title>freebuff-proxy · admin</title>
 <link rel="stylesheet" href="/admin/assets/pico.min.css">
@@ -14,23 +14,22 @@
 <header class="site">
   <nav class="container">
     <div class="nav-brand-wrap">
-      <a href="/admin" class="brand">
-        <span class="pulse-dot" title="Proxy relay online"></span>
-        <span>freebuff-proxy</span>
-        <span class="brand-sub">admin</span>
-      </a>
-      {{if .HasUpdate}}<a href="{{.UpdateURL}}" class="update-badge" title="New release available" target="_blank" rel="noopener">update: {{.LatestVersion}}</a>{{end}}
+      <a href="/admin" class="brand">freebuff-proxy <span class="brand-sub">admin</span></a>
+      {{if .HasUpdate}}<a href="{{.UpdateURL}}" class="update-badge" title="new release available">update: {{.LatestVersion}}</a>{{end}}
     </div>
+    <button class="hamburger" aria-label="Toggle menu" onclick="document.querySelector('.nav-menu').classList.toggle('open')">
+      <span></span><span></span><span></span>
+    </button>
     <ul class="nav-menu" role="menubar">
-      <li role="none"><a href="/admin" role="menuitem" class="nav-link{{if eq .Page "overview"}} active{{end}}" data-key="1"><span class="nav-icon" aria-hidden="true">⊞</span> Overview</a></li>
-      <li role="none"><a href="/admin/tokens" role="menuitem" class="nav-link{{if eq .Page "tokens"}} active{{end}}" data-key="2"><span class="nav-icon" aria-hidden="true">🔑</span> Tokens</a></li>
-      <li role="none"><a href="/admin/models" role="menuitem" class="nav-link{{if eq .Page "models"}} active{{end}}" data-key="3"><span class="nav-icon" aria-hidden="true">⚡</span> Models</a></li>
-      <li role="none"><a href="/admin/traces" role="menuitem" class="nav-link{{if eq .Page "traces"}} active{{end}}" data-key="4"><span class="nav-icon" aria-hidden="true">⏱</span> Traces</a></li>
-      <li role="none"><a href="/admin/playground" role="menuitem" class="nav-link{{if eq .Page "playground"}} active{{end}}" data-key="5"><span class="nav-icon" aria-hidden="true">▶</span> Playground</a></li>
-      <li role="none"><a href="/admin/config" role="menuitem" class="nav-link{{if eq .Page "config"}} active{{end}}" data-key="6"><span class="nav-icon" aria-hidden="true">⚙</span> Config</a></li>
-      <li role="none"><a href="/admin/setup" role="menuitem" class="nav-link{{if eq .Page "setup"}} active{{end}}" data-key="7"><span class="nav-icon" aria-hidden="true">✦</span> Setup</a></li>
-      <li role="none"><a href="/admin/logs" role="menuitem" class="nav-link{{if eq .Page "logs"}} active{{end}}" data-key="8"><span class="nav-icon" aria-hidden="true">≡</span> Logs</a></li>
-      <li role="none"><a href="/admin/metrics" role="menuitem" class="nav-link{{if eq .Page "metrics"}} active{{end}}" data-key="9"><span class="nav-icon" aria-hidden="true">📊</span> Metrics</a></li>
+      <li role="none"><a href="/admin" role="menuitem" class="nav-link{{if eq .Page "overview"}} active{{end}}"><span class="nav-icon" aria-hidden="true">⊞</span> Overview</a></li>
+      <li role="none"><a href="/admin/tokens" role="menuitem" class="nav-link{{if eq .Page "tokens"}} active{{end}}"><span class="nav-icon" aria-hidden="true">🔑</span> Tokens</a></li>
+      <li role="none"><a href="/admin/models" role="menuitem" class="nav-link{{if eq .Page "models"}} active{{end}}"><span class="nav-icon" aria-hidden="true">⚡</span> Models</a></li>
+      <li role="none"><a href="/admin/traces" role="menuitem" class="nav-link{{if eq .Page "traces"}} active{{end}}"><span class="nav-icon" aria-hidden="true">⏱</span> Traces</a></li>
+      <li role="none"><a href="/admin/playground" role="menuitem" class="nav-link{{if eq .Page "playground"}} active{{end}}"><span class="nav-icon" aria-hidden="true">▶</span> Playground</a></li>
+      <li role="none"><a href="/admin/config" role="menuitem" class="nav-link{{if eq .Page "config"}} active{{end}}"><span class="nav-icon" aria-hidden="true">⚙</span> Config</a></li>
+      <li role="none"><a href="/admin/setup" role="menuitem" class="nav-link{{if eq .Page "setup"}} active{{end}}"><span class="nav-icon" aria-hidden="true">✦</span> Setup</a></li>
+      <li role="none"><a href="/admin/logs" role="menuitem" class="nav-link{{if eq .Page "logs"}} active{{end}}"><span class="nav-icon" aria-hidden="true">≡</span> Logs</a></li>
+      <li role="none"><a href="/admin/metrics" role="menuitem" class="nav-link{{if eq .Page "metrics"}} active{{end}}"><span class="nav-icon" aria-hidden="true">📊</span> Metrics</a></li>
     </ul>
   </nav>
 </header>
@@ -63,17 +62,18 @@
   }
   convertAll();
   setInterval(convertAll, 30000);
-
-  // Keyboard navigation shortcuts: numbers 1-9 switch tabs when not typing
-  document.addEventListener("keydown", function (e) {
-    if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT" || e.target.isContentEditable)) return;
-    if (e.altKey || e.ctrlKey || e.metaKey) return;
-    var key = e.key;
-    if (key >= "1" && key <= "9") {
-      var link = document.querySelector('.nav-link[data-key="' + key + '"]');
-      if (link && !link.classList.contains("active")) {
-        link.click();
-      }
+})();
+</script>
+<script>
+// Keyboard navigation: 1-9 jump to nav links
+(function () {
+  var links = document.querySelectorAll('.nav-link');
+  document.addEventListener('keydown', function (e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+    var n = parseInt(e.key, 10);
+    if (n >= 1 && n <= links.length) {
+      e.preventDefault();
+      links[n - 1].click();
     }
   });
 })();

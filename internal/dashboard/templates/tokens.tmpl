@@ -1,8 +1,8 @@
 {{define "tokens"}}
 <section class="page-head">
   <div>
-    <h1>Token Pool &amp; Quotas</h1>
-    <p class="muted">Live per-token session health, cooldown locks, and model admission quotas</p>
+    <h1>Tokens</h1>
+    <p class="muted">live per-token session state and per-model quota</p>
   </div>
   <div class="pills">
     <span class="pill pill-{{if .InBridge}}bridge{{else if eq .Mode "hybrid"}}hybrid{{else}}pool{{end}}">{{.Mode}}</span>
@@ -12,85 +12,87 @@
 
 {{if .InBridge}}
 <article class="card bridge-card">
-  <h2>Bridge mode (Zero-Storage Relay)</h2>
-  <p>Upstream tokens are relayed per client request ({{.BridgeTokens}} active bridge client{{if ne .BridgeTokens 1}}s{{end}}); session state and quota are per-client and are not tracked here.</p>
-  <p class="muted">Paste a FreeBuff token below to switch to pooled mode — it is added live and persisted to <code>.env</code> immediately.</p>
+  <h2 class="card-title">Bridge mode</h2>
+  <p class="card-desc">Upstream tokens are relayed per client request ({{.BridgeTokens}} active bridge client{{if ne .BridgeTokens 1}}s{{end}}); session state and quota are per-client and are not tracked here.</p>
+  <p class="card-desc">Paste a FreeBuff token below to switch to pooled mode — it is added live and persisted to <code class="code-pill">.env</code>.</p>
 </article>
 {{else if not .HasTokens}}
 <article class="card empty-card">
-  <h2>No Tokens Configured</h2>
-  <p>Paste a FreeBuff token (<code>cb_...</code>) below to start the pooled relay.</p>
+  <h2 class="card-title">No tokens configured</h2>
+  <p class="card-desc">Paste a FreeBuff token below to start the pooled relay.</p>
 </article>
 {{else}}
 <article class="card mode-card">
-  <h2>{{if eq .Mode "hybrid"}}Hybrid mode{{else}}Pooled mode{{end}} — {{.TokenCount}} Active Token(s)</h2>
-  {{if eq .Mode "hybrid"}}<p class="muted">Hybrid: client-supplied Bearer tokens relay in bridge mode; token-less requests use the pool below.</p>{{end}}
-  <p class="muted">Live operational actions: Test, Unlock, and Finish act on the active pool immediately without downtime.</p>
+  <div class="card-header">
+    <div>
+      <h2 class="card-title">{{if eq .Mode "hybrid"}}Hybrid mode{{else}}Pooled mode{{end}} — {{.TokenCount}} token(s)</h2>
+      {{if eq .Mode "hybrid"}}<p class="card-desc">Hybrid: a client-supplied token is relayed like bridge; token-less requests use the pooled tokens below.</p>{{end}}
+      <p class="card-desc">Tokens below are live: Test/Unlock/Finish act on them immediately, and the pool persists changes to <code class="code-pill">.env</code> (no restart needed).</p>
+    </div>
+  </div>
   <div class="token-actions-bar">
-    <button class="action-btn btn-danger" hx-post="/admin/tokens/remove" hx-confirm="Remove the last token from the pool and .env?" hx-target="#token-result" hx-swap="innerHTML">Remove last token</button>
-    <button class="action-btn btn-mode" hx-post="/admin/mode" hx-vals='{"mode":"hybrid"}' hx-confirm="Switch to hybrid mode? Pooled tokens stay; clients with a token relay it, token-less requests use the pool." hx-target="#token-result" hx-swap="innerHTML">Switch to hybrid mode</button>
-    <button class="action-btn btn-mode" hx-post="/admin/mode" hx-vals='{"mode":"bridge"}' hx-confirm="Switch to bridge mode? All pooled tokens are removed." hx-target="#token-result" hx-swap="innerHTML">Switch to bridge mode</button>
+    <button class="action-btn btn-mode" style="order:1" hx-post="/admin/mode" hx-vals='{"mode":"hybrid"}' hx-confirm="Switch to hybrid mode? Pooled tokens stay; clients with a token relay it, token-less requests use the pool." hx-target="#token-result" hx-swap="innerHTML">Switch to hybrid mode</button>
+    <button class="action-btn btn-mode" style="order:2" hx-post="/admin/mode" hx-vals='{"mode":"bridge"}' hx-confirm="Switch to bridge mode? All pooled tokens are removed (clients then send their own token)." hx-target="#token-result" hx-swap="innerHTML">Switch to bridge mode</button>
+    <button class="action-btn btn-danger" style="order:3" hx-post="/admin/tokens/remove" hx-confirm="Remove the last token from the pool and .env?" hx-target="#token-result" hx-swap="innerHTML">Remove last token</button>
   </div>
 </article>
 {{end}}
 
 <article class="card add-token-card">
-  <div class="add-token-header">
-    <h2>+ Add Token to Pool</h2>
-    <p class="muted">Paste a FreeBuff auth token (<code>cb_...</code>) — appended to the live pool and saved to <code>.env</code> with zero downtime.</p>
-  </div>
+  <h2 class="card-title">Add token</h2>
+  <p class="card-desc">Paste a FreeBuff token (<code class="code-pill">cb_...</code>) — added to the live pool and persisted.</p>
   <form hx-post="/admin/tokens/add" hx-target="#token-result" hx-swap="innerHTML" class="inline-token-form">
     <label for="new-token" class="visually-hidden">Token</label>
-    <input type="text" id="new-token" name="token" placeholder="Paste FreeBuff token (cb_...)" autocomplete="off" spellcheck="false" class="mono input-token" required>
-    <button type="submit" class="action-btn btn-test">Add to pool</button>
+    <input type="text" id="new-token" name="token" placeholder="cb_..." autocomplete="off" spellcheck="false" class="mono input">
+    <button type="submit" class="action-btn btn-amber">Add token</button>
   </form>
 </article>
 
 <div class="tokens-control-bar">
-  <p class="muted manage-note">Advanced: <code>AUTH_TOKENS</code> can also be edited directly in <a href="/admin/config">Config</a>.</p>
-  {{if not .InBridge}}<button class="action-btn btn-test" hx-post="/admin/tokens/test-all" hx-target="#token-result" hx-swap="innerHTML">⚡ Test all tokens (Zero-Cost)</button>{{end}}
+  <p class="muted manage-note">Advanced: <code class="code-pill">AUTH_TOKENS</code> can also be edited raw in <a href="/admin/config" class="link-amber">Config</a>.</p>
+  {{if not .InBridge}}<button class="action-btn btn-outline" hx-post="/admin/tokens/test-all" hx-target="#token-result" hx-swap="innerHTML">Test all tokens</button>{{end}}
 </div>
 <div id="token-result"></div>
 
 {{range .Tokens}}
 <article class="card token-detail">
   <header class="token-head">
-    <span class="state-dot dot-{{.RiskLevel}}" title="Risk tier: {{.RiskLevel}}"></span>
+    <span class="state-dot dot-{{.RiskLevel}}"></span>
     <strong class="token-name">Token {{.Index}}</strong>
     <span class="pill risk-{{.RiskLevel}}">{{.RiskLevel}}</span>
-    {{if .HasStanding}}<span class="pill standing-pill" title="Upstream account standing">trust {{.StandingLabel}} · {{printf "%.0f" .StandingScore}}/100{{if .StandingNextLevel}} → {{.StandingNextLevel}}{{end}}</span>{{end}}
+    {{if .HasStanding}}<span class="pill standing-pill" title="Account access level (standing)">trust {{.StandingLabel}} · {{printf "%.0f" .StandingScore}}/100{{if .StandingNextLevel}} → {{.StandingNextLevel}}{{end}}</span>{{end}}
     <span class="pill">{{.SessionStatus}}</span>
     <span class="token-actions">
-      {{if .CooldownActive}}<button class="action-btn btn-unlock" hx-post="/admin/tokens/{{.Index}}/unlock" hx-confirm="Unlock Token {{.Index}}? Only do this if you know the cooldown/ban is stale." hx-target="#token-result" hx-swap="innerHTML">🔓 Unlock</button>{{end}}
-      <button class="action-btn btn-test" hx-post="/admin/tokens/{{.Index}}/test" hx-target="#token-result" hx-swap="innerHTML">⚡ Test</button>
-      <button class="action-btn btn-finish" hx-post="/admin/tokens/{{.Index}}/finish" hx-confirm="Finish all active runs of Token {{.Index}}? In-flight requests are unaffected." hx-target="#token-result" hx-swap="innerHTML">⟳ Finish runs</button>
+      {{if .CooldownActive}}<button class="action-btn btn-outline btn-unlock" hx-post="/admin/tokens/{{.Index}}/unlock" hx-confirm="Unlock Token {{.Index}}? Only do this if you know the cooldown/ban is stale — upstream locks are usually correct." hx-target="#token-result" hx-swap="innerHTML">Unlock</button>{{end}}
+      <button class="action-btn btn-outline btn-test" hx-post="/admin/tokens/{{.Index}}/test" hx-target="#token-result" hx-swap="innerHTML">Test</button>
+      <button class="action-btn btn-muted btn-finish" hx-post="/admin/tokens/{{.Index}}/finish" hx-confirm="Finish all active runs of Token {{.Index}}? In-flight requests are unaffected." hx-target="#token-result" hx-swap="innerHTML">Finish runs</button>
     </span>
   </header>
   <dl class="kv kv-4">
-    <div><dt>session id</dt><dd class="mono">{{.SessionInstance}}</dd></div>
-    <div><dt>active runs</dt><dd class="mono">{{.ActiveRuns}}</dd></div>
-    <div><dt>total requests</dt><dd class="mono">{{.Requests}}</dd></div>
-    <div><dt>messages 24h</dt><dd class="mono">{{.Messages24h}}{{if gt .DailyLimit 0}} / {{.DailyLimit}}{{end}}</dd></div>
-    {{if gt .QueueDepth 0}}<div><dt>queue position</dt><dd class="mono">{{.QueuePosition}}/{{.QueueDepth}}</dd></div>{{end}}
-    {{if .CooldownActive}}<div><dt>cooldown until</dt><dd class="mono">{{.CooldownUntil}}</dd></div>{{end}}
-    {{if gt .TransientRetries 0}}<div><dt>transient retries</dt><dd class="mono">{{.TransientRetries}}</dd></div>{{end}}
-    {{if and .HasStanding .StandingNextLevelAt}}<div><dt>next level at</dt><dd class="mono">{{.StandingNextLevelAt}}</dd></div>{{end}}
+    <div class="stat-box"><dt class="stat-label">session id</dt><dd class="stat-value mono">{{.SessionInstance}}</dd></div>
+    <div class="stat-box"><dt class="stat-label">active runs</dt><dd class="stat-value mono">{{.ActiveRuns}}</dd></div>
+    <div class="stat-box"><dt class="stat-label">requests</dt><dd class="stat-value mono">{{.Requests}}</dd></div>
+    <div class="stat-box"><dt class="stat-label">messages 24h</dt><dd class="stat-value mono">{{.Messages24h}}{{if gt .DailyLimit 0}} / {{.DailyLimit}}{{end}}</dd></div>
+    {{if gt .QueueDepth 0}}<div class="stat-box"><dt class="stat-label">queue</dt><dd class="stat-value mono">{{.QueuePosition}}/{{.QueueDepth}}</dd></div>{{end}}
+    {{if .CooldownActive}}<div class="stat-box"><dt class="stat-label">cooldown until</dt><dd class="stat-value mono">{{.CooldownUntil}}</dd></div>{{end}}
+    {{if gt .TransientRetries 0}}<div class="stat-box"><dt class="stat-label">transient retries</dt><dd class="stat-value mono">{{.TransientRetries}}</dd></div>{{end}}
+    {{if and .HasStanding .StandingNextLevelAt}}<div class="stat-box"><dt class="stat-label">next level at</dt><dd class="stat-value mono">{{.StandingNextLevelAt}}</dd></div>{{end}}
   </dl>
   {{if gt .DailyLimit 0}}
-  <div class="usage {{if ge .UsagePct 80}}usage-near{{end}}"><div class="usage-bar" style="width: {{.UsagePct}}%"></div></div>
-  <p class="muted usage-label">{{.UsagePct}}% of daily message limit</p>
+  <div class="usage"><div class="usage-bar" style="width: {{.UsagePct}}%"></div></div>
+  <p class="progress-label">{{.UsagePct}}% of daily limit</p>
   {{end}}
   {{if .HasQuota}}
   <h3 class="quota-heading">Session quota by model</h3>
   <div class="table-wrap">
     <table class="quota-table">
       <thead>
-        <tr><th scope="col">Model ID</th><th scope="col">Recent</th><th scope="col">Limit</th><th scope="col">Period</th><th scope="col">Reset Time</th><th scope="col">Entitlement</th></tr>
+        <tr><th scope="col">model</th><th scope="col">recent</th><th scope="col">limit</th><th scope="col">period</th><th scope="col">reset</th><th scope="col">entitlement</th></tr>
       </thead>
       <tbody>
       {{range .Quota}}
         <tr>
-          <td class="mono"><strong>{{.Model}}</strong></td>
+          <td class="mono">{{.Model}}</td>
           <td class="mono">{{.Recent}}</td>
           <td class="mono">{{.Limit}}</td>
           <td class="mono">{{.Period}}</td>
