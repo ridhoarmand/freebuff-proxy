@@ -1,5 +1,5 @@
 <script>
-  import { ListFilter, Search, RefreshCw, AlertCircle, AlertTriangle, CheckCircle2, Info } from '@lucide/svelte';
+  import { ListFilter, Search, RefreshCw, AlertCircle, AlertTriangle, CheckCircle2, Info, X } from '@lucide/svelte';
   import PageHeader from '../components/PageHeader.svelte';
   import StatusBadge from '../components/StatusBadge.svelte';
   import EmptyState from '../components/EmptyState.svelte';
@@ -89,17 +89,27 @@
           <option value="error">ERROR</option>
         </select>
       </div>
-      <div class="w-full flex-1 relative">
+      <div class="w-full flex-1 relative flex items-center">
         <label for="log-search-input" class="sr-only">Search</label>
+        <Search size={14} class="absolute left-3 text-[var(--fp-dim)] pointer-events-none" />
         <input
           id="log-search-input"
-          type="search"
+          type="text"
           bind:value={filterMsg}
           oninput={handleFilterChange}
           placeholder="Filter by message, req_id, path..."
-          class="fp-input fp-input-mono text-xs pl-10"
+          class="fp-input text-xs pl-9 pr-8 py-1.5 h-8.5"
         />
-        <Search size={14} class="absolute left-3.5 top-2.5 text-[var(--fp-dim)]" />
+        {#if filterMsg}
+          <button
+            type="button"
+            onclick={() => { filterMsg = ''; handleFilterChange(); }}
+            class="absolute right-2 p-1 rounded hover:bg-[var(--fp-surface-3)] text-[var(--fp-dim)] hover:text-white transition-colors"
+            aria-label="Clear filter"
+          >
+            <X size={13} />
+          </button>
+        {/if}
       </div>
     </div>
 

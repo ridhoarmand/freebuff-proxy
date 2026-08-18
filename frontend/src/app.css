@@ -221,26 +221,36 @@ code, pre, .font-mono {
 }
 
 /* ── Input base ───────────────────────────────────────────────── */
-.fp-input {
-  width: 100%;
-  background: var(--fp-input-bg);
-  border: 1px solid var(--fp-border);
-  border-radius: var(--fp-radius);
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
-  color: var(--fp-text);
-  font-family: inherit;
-  transition: border-color var(--fp-duration) var(--fp-ease);
+@layer components {
+  .fp-input {
+    width: 100%;
+    background: var(--fp-input-bg);
+    border: 1px solid var(--fp-border);
+    border-radius: var(--fp-radius);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--fp-text);
+    font-family: inherit;
+    transition: border-color var(--fp-duration) var(--fp-ease);
+  }
+
+  .fp-input:focus {
+    outline: none;
+    border-color: var(--fp-amber);
+    box-shadow: 0 0 0 3px var(--fp-amber-subtle);
+  }
+
+  .fp-input-mono {
+    font-family: "Geist Mono", ui-monospace, monospace;
+  }
 }
 
-.fp-input:focus {
-  outline: none;
-  border-color: var(--fp-amber);
-  box-shadow: 0 0 0 3px var(--fp-amber-subtle);
-}
-
-.fp-input-mono {
-  font-family: "Geist Mono", ui-monospace, monospace;
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-results-button,
+input[type="search"]::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  display: none;
 }
 
 /* ── Table base ───────────────────────────────────────────────── */

@@ -452,26 +452,28 @@
             <p class="text-xs text-[var(--fp-muted)] mt-0.5">Hover or click any setting to view documentation and adjust values.</p>
           </div>
           <!-- Search box -->
-          <div class="relative w-full sm:w-56">
+          <div class="relative w-full sm:w-60 shrink-0">
             <label for="config-search" class="sr-only">Search settings</label>
-            <input
-              id="config-search"
-              type="search"
-              bind:value={searchQuery}
-              placeholder="Search setting..."
-              class="fp-input fp-input-mono text-xs pl-8 pr-7 py-1.5 focus-visible:ring-2 focus-visible:ring-[var(--fp-amber)]"
-            />
-            <Search size={13} class="absolute left-2.5 top-2 text-[var(--fp-dim)]" />
-            {#if searchQuery}
-              <button
-                type="button"
-                onclick={() => searchQuery = ''}
-                class="absolute right-2 top-2 text-[var(--fp-dim)] hover:text-white transition-colors"
-                aria-label="Clear search"
-              >
-                <X size={13} />
-              </button>
-            {/if}
+            <div class="relative flex items-center">
+              <Search size={14} class="absolute left-3 text-[var(--fp-dim)] pointer-events-none" />
+              <input
+                id="config-search"
+                type="text"
+                bind:value={searchQuery}
+                placeholder="Search setting..."
+                class="fp-input text-xs pl-9 pr-8 py-1.5 h-8.5 focus-visible:ring-2 focus-visible:ring-[var(--fp-amber)]"
+              />
+              {#if searchQuery}
+                <button
+                  type="button"
+                  onclick={() => searchQuery = ''}
+                  class="absolute right-2 p-1 rounded hover:bg-[var(--fp-surface-3)] text-[var(--fp-dim)] hover:text-white transition-colors"
+                  aria-label="Clear search"
+                >
+                  <X size={13} />
+                </button>
+              {/if}
+            </div>
           </div>
         </div>
 
