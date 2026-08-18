@@ -17,16 +17,16 @@
       <a href="/admin" class="brand">freebuff-proxy <span class="brand-sub">admin</span></a>
       {{if .HasUpdate}}<a href="{{.UpdateURL}}" class="update-badge" title="new release available">update: {{.LatestVersion}}</a>{{end}}
     </div>
-    <ul class="nav-menu">
-      <li><a href="/admin" class="nav-link{{if eq .Page "overview"}} active{{end}}">Overview</a></li>
-      <li><a href="/admin/tokens" class="nav-link{{if eq .Page "tokens"}} active{{end}}">Tokens</a></li>
-      <li><a href="/admin/models" class="nav-link{{if eq .Page "models"}} active{{end}}">Models</a></li>
-      <li><a href="/admin/traces" class="nav-link{{if eq .Page "traces"}} active{{end}}">Traces</a></li>
-      <li><a href="/admin/playground" class="nav-link{{if eq .Page "playground"}} active{{end}}">Playground</a></li>
-      <li><a href="/admin/config" class="nav-link{{if eq .Page "config"}} active{{end}}">Config</a></li>
-      <li><a href="/admin/setup" class="nav-link{{if eq .Page "setup"}} active{{end}}">Setup</a></li>
-      <li><a href="/admin/logs" class="nav-link{{if eq .Page "logs"}} active{{end}}">Logs</a></li>
-      <li><a href="/admin/metrics" class="nav-link{{if eq .Page "metrics"}} active{{end}}">Metrics</a></li>
+    <ul class="nav-menu" role="menubar">
+      <li role="none"><a href="/admin" role="menuitem" class="nav-link{{if eq .Page "overview"}} active{{end}}"><span class="nav-icon" aria-hidden="true">⊞</span> Overview</a></li>
+      <li role="none"><a href="/admin/tokens" role="menuitem" class="nav-link{{if eq .Page "tokens"}} active{{end}}"><span class="nav-icon" aria-hidden="true">🔑</span> Tokens</a></li>
+      <li role="none"><a href="/admin/models" role="menuitem" class="nav-link{{if eq .Page "models"}} active{{end}}"><span class="nav-icon" aria-hidden="true">⚡</span> Models</a></li>
+      <li role="none"><a href="/admin/traces" role="menuitem" class="nav-link{{if eq .Page "traces"}} active{{end}}"><span class="nav-icon" aria-hidden="true">⏱</span> Traces</a></li>
+      <li role="none"><a href="/admin/playground" role="menuitem" class="nav-link{{if eq .Page "playground"}} active{{end}}"><span class="nav-icon" aria-hidden="true">▶</span> Playground</a></li>
+      <li role="none"><a href="/admin/config" role="menuitem" class="nav-link{{if eq .Page "config"}} active{{end}}"><span class="nav-icon" aria-hidden="true">⚙</span> Config</a></li>
+      <li role="none"><a href="/admin/setup" role="menuitem" class="nav-link{{if eq .Page "setup"}} active{{end}}"><span class="nav-icon" aria-hidden="true">✦</span> Setup</a></li>
+      <li role="none"><a href="/admin/logs" role="menuitem" class="nav-link{{if eq .Page "logs"}} active{{end}}"><span class="nav-icon" aria-hidden="true">≡</span> Logs</a></li>
+      <li role="none"><a href="/admin/metrics" role="menuitem" class="nav-link{{if eq .Page "metrics"}} active{{end}}"><span class="nav-icon" aria-hidden="true">📊</span> Metrics</a></li>
     </ul>
   </nav>
   {{if .OpenBanner}}
