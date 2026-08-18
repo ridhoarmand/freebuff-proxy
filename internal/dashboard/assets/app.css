@@ -660,10 +660,17 @@ textarea[name="content"] {
   .inline-token-form {
     flex-direction: column;
     align-items: stretch;
+    gap: 0.6rem;
   }
-  .inline-token-form input,
+  .inline-token-form input {
+    width: 100%;
+    flex: 0 0 auto;
+    min-height: 44px;
+  }
   .inline-token-form button {
     width: 100%;
+    flex: 0 0 auto;
+    min-height: 44px;
   }
 }
 .smoke-card {
