@@ -165,9 +165,24 @@ For multi-account management or multi-user API routing:
 
 ---
 
+## Access Tiers
+
+FreeBuff assigns access tiers at the Cloudflare edge based on TCP source IP GeoIP (not HTTP headers):
+
+- **Full tier** (`accessTier: "full"`): Tier-1 countries (US, UK, DE, JP, CA, etc.) with residential ASN. All models available. 5 concurrent sessions per model.
+- **Limited tier** (`accessTier: "limited"`): Non-Tier-1 countries. All model requests coerced to `mimo/mimo-v2.5` server-side. 3 concurrent sessions per model.
+
+Check your tier: the `/healthz` response includes access tier info when the last session admission carried it. The dashboard Overview page also shows it.
+
+See [Getting Started — Access Tiers & Workarounds](getting-started.md#access-tiers--workarounds) for how to reach full tier from a limited-tier location.
+
+---
+
 ## Default model
 
-`deepseek/deepseek-v4-flash` is the default for full-tier accounts. For limited-tier accounts (due to region or IP privacy signals), `mimo/mimo-v2.5` is the supported active model (`deepseek/deepseek-v4-flash` is restricted to full-tier accounts).
+`deepseek/deepseek-v4-flash` is the default for full-tier accounts. As of 2026-08-18, it is restricted to full-tier only (upstream announcement).
+
+For limited-tier accounts, **all model requests are coerced to `mimo/mimo-v2.5` by the upstream server** regardless of the model ID sent in `x-freebuff-model`. The proxy passes your requested model through unchanged — the coercion happens at FreeBuff's server layer, not in the proxy. The CLI exhibits identical behavior: it sends `deepseek/deepseek-v4-flash` and receives `model: mimo/mimo-v2.5` in the admission response (verified via MITM TLS interception).
 
 Only request models your account's tier and region actually offers: out-of-tier picks are refused or downgraded (`model_unavailable`, `session_model_mismatch`), and the requested model id is correlated with your egress IP's region.
 

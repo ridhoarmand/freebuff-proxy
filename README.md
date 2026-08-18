@@ -51,7 +51,7 @@ If you are a beginner, you don't need to write code or compile anything:
 5. **Connect your tool**: In Cursor, VS Code Continue/Cline, Chatbox, or OpenCode, set:
    - **Base URL**: `http://localhost:3457/v1`
    - **API Key**: `not-needed`
-   - **Model**: `deepseek/deepseek-v4-flash`
+   - **Model**: `deepseek/deepseek-v4-flash` (full-tier only; limited-tier accounts are coerced to `mimo/mimo-v2.5`)
    *(See [Client Integration Guide](docs/guides/client-integration.md) for 1-click config snippets)*.
 
 **Before you start, the rules (what you should / shouldn't do):**
@@ -59,13 +59,15 @@ If you are a beginner, you don't need to write code or compile anything:
 | ✅ Do | ❌ Don't |
 |---|---|
 | Use **one key until it is rate-limited**; the pool drains it naturally | **Don't rotate many healthy keys**; it looks like account farming |
-| Use a **normal residential connection** | **Don't use a VPN / proxy / Tor** (hard-block signal: limited tier or `country_blocked`) |
+| Use a **normal residential connection** | **Don't use a VPN / proxy / Tor** (Cloudflare TCP-layer GeoIP + MaxMind/Spur ASN detection → restricted cohort or `country_blocked`) |
 | Register with a **real email** (e.g. Gmail) | **Don't use temp-mail** (documented ban cohort: 6,699 of 7,129 accounts already banned) |
 | Request **only models your tier/region offers** (default Flash) | **Don't request out-of-region models**: refused/downgraded and correlated with your IP's geo |
 | Read a `429` as **quota, resets Pacific midnight** | **Don't confuse it with a ban**; only `403` `banned`/`country_blocked` is terminal |
 | Expect **reduced** risk, not immunity | **Don't run unattended 24/7** or expect zero ban risk |
 | Keep the pool **draining one key at a time** | **Don't hammer many tokens from one public IP** (`ip_capped`) |
 
+
+**Access Tiers.** FreeBuff determines your access tier via Cloudflare TCP-layer GeoIP (not HTTP headers — spoofing is impossible). A residential IP in a Tier-1 country (US, UK, DE, JP, CA, etc.) gets `accessTier: "full"` with all models available. Non-Tier-1 country IPs get `accessTier: "limited"` and all model requests are coerced server-side to `mimo/mimo-v2.5`. VPN/datacenter IPs are flagged via MaxMind/Spur ASN detection (`ipPrivacySignals: ["vpn"]`) and placed in a restricted cohort ($0.50/day ceiling). Workarounds for limited-tier users: route through a Tailscale/WireGuard exit node in a Tier-1 country, set `HTTP_PROXY` to a residential proxy, or pool 4-5 tokens for 15-30 sessions/day. See [Getting Started](docs/guides/getting-started.md) for details.
 Full detail in [Key Hygiene & Ban Avoidance](#key-hygiene--ban-avoidance).
 
 For a guided walkthrough, read [Getting Started](docs/guides/getting-started.md) (5 minutes).
@@ -312,11 +314,13 @@ opt out). It enables essential anti-ban protections and presets:
   It does **not** aggressively round-robin healthy keys. Letting one account run until its
   daily quota is natural usage; rotating many healthy keys in rapid succession looks like
   account farming and can trigger upstream ban detection.
-- **Do not route through a VPN.** VPN / proxy / Tor / hosting egress is a hard-block signal:
-  it demotes the account to the limited tier or a terminal `country_blocked`, and restricted
-  cohorts are priced at a **$0.50/day spend ceiling** (≈1 session/day). The proxy's stealth
-  settings mask TLS fingerprints and proxy headers; they do **not** change your public IP.
-  Use a normal residential connection.
+- **Do not route through a VPN.** FreeBuff resolves access tier via Cloudflare TCP-layer GeoIP
+  (not HTTP headers — `X-Forwarded-For`/`CF-Connecting-IP` spoofing is impossible at L4).
+  VPN/datacenter IPs are detected via MaxMind/Spur Intelligence ASN databases
+  (`ipPrivacySignals: ["vpn"]`) and placed in a restricted cohort with a **$0.50/day spend ceiling**.
+  Commercial VPNs (NordVPN, ExpressVPN), datacenter VPS (AWS, DO, Hetzner), and Tor all trigger
+  this detection. The proxy's stealth settings mask TLS fingerprints and proxy headers; they do
+  **not** change your public IP. Use a normal residential connection.
 - **Do not hammer many tokens at once from the same public IP.** Upstream caps how many
   distinct users can hold an active free session on one egress IP (`ip_capped`, 429), and
   accounts created from the same signup network (≥8 per /24) or mailbox (≥3) are permanently

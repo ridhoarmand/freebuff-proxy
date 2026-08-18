@@ -81,9 +81,9 @@ In the 9router provider node, you can add any of these models from the proxy cat
 
 | Model ID in 9router | Description | Access Tier |
 | :--- | :--- | :--- |
-| `deepseek/deepseek-v4-flash` | High speed general coding model | Full tier |
+| `deepseek/deepseek-v4-flash` | High speed general coding model | **Full tier only** (limited tier restricted 2026-08-18) |
 | `deepseek/deepseek-v4-pro` | Deep reasoning coding model | Full tier |
-| `mimo/mimo-v2.5` | Fast lightweight coding model (supported on limited tier) | All regions / tiers |
+| `mimo/mimo-v2.5` | Fast lightweight coding model | **All tiers** (sole limited-tier model; all limited-tier requests coerced here server-side) |
 | `openai/gpt-5.6-luna` | Deep reasoning + multimodal | Full tier |
 | `minimax/minimax-m3` | High context window | Full tier |
 | `z-ai/glm-5.2` | Advanced agentic model | Rate limited (5/20h) |
@@ -95,6 +95,8 @@ Clients calling 9router address these models as `freebuff/<model-id>`, for examp
   "messages": [{"role": "user", "content": "Write a python function"}]
 }
 ```
+
+> **Note for limited-tier accounts:** All model requests from limited-tier IPs are coerced to `mimo/mimo-v2.5` by the upstream server regardless of the model ID sent. For limited-tier setups, configure `mimo/mimo-v2.5` as the default model in 9router instead of `deepseek/deepseek-v4-flash` (which is restricted to full-tier only as of 2026-08-18).
 
 ---
 
@@ -127,6 +129,7 @@ Go to 9router **Chat** tab, select provider `freebuff` and model `freebuff/deeps
 | **502 `upstream_auth_rejected`** | Token in `.env` or the 9router connection is expired or invalid. | Regenerate a token via `.\scripts\gen-token.cmd` (or `./scripts/gen-token.sh`). |
 | **429 Rate Limited** | Daily account quota exhausted (resets at Pacific Midnight / 07:00 UTC). | In Bridge mode, 9router will auto-fallback to your next key. |
 | **Truncated Reasoning / Tool Calls** | Model ran out of token generation budget. | Increase `max_tokens` (≥ 4000) in your client settings. |
+| **Model shows as `region_limited`** | Limited-tier account (non-Tier-1 country IP). | Use `mimo/mimo-v2.5` as default model, or route through a residential Tier-1 proxy. See [Getting Started — Access Tiers](getting-started.md#access-tiers--workarounds). |
 
 ---
 

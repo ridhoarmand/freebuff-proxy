@@ -36,8 +36,8 @@ Using this proxy conflicts with Codebuff's terms of service. Upstream abuse dete
 | ✅ Do | ❌ Don't |
 |---|---|
 | **Keep `SAFE_MODE=true`** (default; anti-ban stealth: TLS fingerprint, header sanitization, request jitter, idle rotation) | **Don't** run 24/7 on heavy unattended automated tasks |
-| Use a **normal residential connection** | **Don't use a VPN / proxy / Tor**. Hard-block signal: limited tier or terminal `country_blocked`, restricted cohorts get a $0.50/day spend ceiling (≈1 session/day) |
-| Request **only models your tier/region offers** | **Don't request out-of-region models**: refused or downgraded, and the model id is correlated with your egress IP's region. On limited-tier accounts, use `mimo/mimo-v2.5` |
+| Use a **normal residential connection** | **Don't use a VPN / proxy / Tor**. FreeBuff determines access tier via **TCP source IP GeoIP at the Cloudflare edge** — not HTTP headers. Header spoofing (`X-Forwarded-For`, `CF-Connecting-IP`) is impossible because Cloudflare overwrites them at L4. VPN and datacenter IPs are detected via MaxMind/Spur Intelligence ASN database (`ipPrivacySignals: ["vpn"]`) and placed in a restricted cohort ($0.50/day spend ceiling, ≈1 session/day) or hard-blocked |
+| Request **only models your tier/region offers** | **Don't request out-of-region models**: on limited-tier accounts (non-Tier-1 countries), **all model requests are coerced to `mimo/mimo-v2.5` server-side** regardless of what you send in `x-freebuff-model`. Verified via MITM: CLI sends `deepseek/deepseek-v4-flash`, server responds with `model: mimo/mimo-v2.5` in admission. This is upstream behavior, not proxy behavior |
 | Keep **one modest account** | **Don't create spam clusters**: upstream caps distinct active sessions per egress IP (`ip_capped`); accounts from the same signup network (≥8 per /24) or mailbox (≥3) are permanently capped at lower trust levels |
 | **Use one key until it is rate-limited** | **Don't rotate several healthy keys aggressively** (farming signal) |
 | Register with a **real email address** (e.g. Gmail) | **Don't use temp-mail**. Documented ban cohort: 6,699 of 7,129 accounts on flagged domains already banned |
@@ -45,6 +45,32 @@ Using this proxy conflicts with Codebuff's terms of service. Upstream abuse dete
 | Budget **4-5 keys for 24h of coding** | **Don't** expect more than one key ≈ one day of moderate use |
 
 ---
+
+## Access Tiers & Workarounds
+
+FreeBuff assigns an access tier at the Cloudflare edge based on your TCP source IP's GeoIP location:
+
+- **Full tier** (`accessTier: "full"`): Tier-1 countries (US, UK, DE, JP, CA, AU, etc.) with a residential/ISP ASN. Access to all models including `deepseek/deepseek-v4-flash`. 5 concurrent sessions per model, 6 sessions/day per model.
+- **Limited tier** (`accessTier: "limited"`): Non-Tier-1 countries (e.g. `countryCode: ID` → `countryBlockReason: "country_not_allowed"`). All model requests coerced to `mimo/mimo-v2.5`. 3 concurrent sessions per model, 6 sessions/day per model.
+
+### Workarounds for limited-tier IPs
+
+**Option A — Tailscale / WireGuard exit node (free, best option):**
+Route traffic through a residential connection in a Tier-1 country. If you have a device (home PC, family member's machine) in the US/UK/DE/JP, install [Tailscale](https://tailscale.com/) on both machines and enable exit node on the remote one. All proxy traffic exits from that residential IP. Cost: $0.
+
+**Option B — Residential proxy:**
+Set `HTTP_PROXY=http://user:pass@proxy:port` in your `.env`. The proxy auto-applies uTLS fingerprinting and header sanitization through it. Use a residential proxy service (not datacenter). The IP must resolve to a Tier-1 country with a residential ASN.
+
+**Option C — Multi-token pooling (no VPN needed):**
+Stay on limited tier but maximize throughput. Set `AUTH_TOKENS=token1,token2,token3,token4,token5` in `.env` with 4-5 accounts. Each gets 6 sessions/day on `mimo/mimo-v2.5`, giving you 15-30 usable sessions per day.
+
+**Do NOT use any of these — they trigger the restricted cohort or an outright ban:**
+- Commercial VPN (NordVPN, ExpressVPN, Surfshark, etc.)
+- Datacenter VPS (AWS, DigitalOcean, Hetzner, Vultr)
+- Tor exit nodes
+
+All of the above resolve to known datacenter/VPN ASNs in MaxMind/Spur Intelligence and produce `ipPrivacySignals: ["vpn"]` at the Cloudflare edge.
+
 
 ## Step 1: Install & Start the Proxy
 
@@ -114,7 +140,7 @@ curl http://localhost:3457/v1/models
 Point your AI tool to:
 - **Base URL:** `http://localhost:3457/v1`
 - **API Key:** `not-needed` (or your token in bridge mode)
-- **Model:** `deepseek/deepseek-v4-flash`
+- **Model:** `deepseek/deepseek-v4-flash` (full-tier only — limited-tier IPs are coerced to `mimo/mimo-v2.5`; see [Access Tiers](#access-tiers--workarounds))
 
 Fastest path: run `./freebuff-proxy -setup` to write the client config automatically.
 
