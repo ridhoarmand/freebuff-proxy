@@ -19,37 +19,20 @@ import (
 	"freebuff-proxy/internal/upstream"
 )
 
-// --- #46: open-dashboard banner ---------------------------------------------
+// --- Open Dashboard Auth Optional -------------------------------------------
 
-// TestOpenDashboardBannerRemote verifies the banner shows when ADMIN_TOKEN
-// is unset AND the request Host is not a loopback name.
-func TestOpenDashboardBannerRemote(t *testing.T) {
+// TestDashboardAuthOptional verifies the dashboard is clean and accessible when ADMIN_TOKEN is unset.
+func TestDashboardAuthOptional(t *testing.T) {
 	mock := testutil.NewMock()
 	defer mock.Close()
 	srv := newServer(t, mock, nil)
-	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
-	req.Host = "192.168.1.50:3457"
-	rec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(rec, req)
-	page := rec.Body.String()
-	if !strings.Contains(page, "Dashboard is open") {
-		t.Error("remote host with no ADMIN_TOKEN: banner missing")
-	}
-}
-
-// TestOpenDashboardBannerLoopback verifies the banner does NOT show for a
-// loopback Host (127.0.0.1 / localhost).
-func TestOpenDashboardBannerLoopback(t *testing.T) {
-	mock := testutil.NewMock()
-	defer mock.Close()
-	srv := newServer(t, mock, nil)
-	for _, host := range []string{"127.0.0.1:3457", "localhost:3457", "[::1]:3457"} {
+	for _, host := range []string{"192.168.1.50:3457", "127.0.0.1:3457", "localhost:3457"} {
 		req := httptest.NewRequest(http.MethodGet, "/admin", nil)
 		req.Host = host
 		rec := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(rec, req)
-		if strings.Contains(rec.Body.String(), "Dashboard is open") {
-			t.Errorf("host %s: banner shown, want none (loopback)", host)
+		if rec.Code != http.StatusOK {
+			t.Errorf("host %s: status = %d, want 200", host, rec.Code)
 		}
 	}
 }

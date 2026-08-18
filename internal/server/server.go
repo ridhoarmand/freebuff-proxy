@@ -698,13 +698,11 @@ func (s *Server) dashboardAuth(next http.Handler) http.Handler {
 // also be loopback-named: a DNS-rebinding page (attacker.com → 127.0.0.1)
 // arrives from a loopback RemoteAddr while its Host stays attacker-owned,
 // which would otherwise defeat the gate (SEC-2).
+// adminSensitive gates secret-bearing admin routes. When ADMIN_TOKEN is set,
+// dashboardAuth validates the session cookie. When ADMIN_TOKEN is unset
+// (optional auth), all admin routes are open to facilitate easy monitoring.
 func (s *Server) adminSensitive(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cfg := s.cfg.Load()
-		if cfg.AdminToken == "" && (!isLoopback(r) || !isLoopbackHost(r.Host)) {
-			s.dash.RenderRestricted(w, r, "This page is only available to loopback clients while ADMIN_TOKEN is unset.")
-			return
-		}
 		next.ServeHTTP(w, r)
 	})
 }

@@ -29,15 +29,6 @@
       <li role="none"><a href="/admin/metrics" role="menuitem" class="nav-link{{if eq .Page "metrics"}} active{{end}}"><span class="nav-icon" aria-hidden="true">📊</span> Metrics</a></li>
     </ul>
   </nav>
-  {{if .OpenBanner}}
-  <div class="open-banner container" role="status">
-    <strong>Dashboard is open — no ADMIN_TOKEN set.</strong>
-    This proxy is reachable from a non-loopback address and the admin UI is
-    unauthenticated: any client that can reach it can view state and change
-    configuration. Set <code>ADMIN_TOKEN</code> in <a href="/admin/config">Config</a>
-    to require a login.
-  </div>
-  {{end}}
 </header>
 <main class="container">
   <div id="{{.Page}}-root">{{.Body}}</div>

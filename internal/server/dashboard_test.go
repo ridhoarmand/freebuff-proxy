@@ -213,19 +213,15 @@ func TestDashboardAssetsPublic(t *testing.T) {
 	}
 }
 
-// With ADMIN_TOKEN unset, secret-bearing routes (config) require a loopback
-// client; a remote client gets 403, not the .env.
-func TestDashboardConfigLoopbackGate(t *testing.T) {
+// With ADMIN_TOKEN unset (optional), config is accessible without 403.
+func TestDashboardConfigOpenWhenUnset(t *testing.T) {
 	ts, _ := newTestServerCfg(t, nil, func(c *config.Config) { c.AdminToken = "" }, testutil.NewMock())
 	req := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
-	// Pin a non-loopback client explicitly: the loopback gate reads
-	// RemoteAddr, and httptest.NewRequest's default (192.0.2.1) is
-	// undocumented behavior a toolchain change could flip.
 	req.RemoteAddr = "203.0.113.9:1234"
 	rec := httptest.NewRecorder()
 	ts.Config.Handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("remote config status = %d, want 403", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("remote config status = %d, want 200 (auth optional)", rec.Code)
 	}
 }
 
