@@ -591,6 +591,24 @@ func TestSanitizeChunk(t *testing.T) {
 		}
 	})
 
+	t.Run("normalizes openrouter reasoning to reasoning_content", func(t *testing.T) {
+		out, drop := SanitizeChunk([]byte(`{"id":"c1","choices":[{"index":0,"delta":{"content":"","reasoning":"mimo think step"}}]}`))
+		if drop {
+			t.Fatal("chunk dropped")
+		}
+		got := decode(t, out)
+		delta := got["choices"].([]any)[0].(map[string]any)["delta"].(map[string]any)
+		if delta["reasoning_content"] != "mimo think step" {
+			t.Fatalf("reasoning_content = %v, want 'mimo think step'", delta["reasoning_content"])
+		}
+		if delta["reasoning"] != "mimo think step" {
+			t.Fatalf("reasoning = %v, want 'mimo think step'", delta["reasoning"])
+		}
+		if delta["content"] != "" {
+			t.Fatalf("content = %v, want empty", delta["content"])
+		}
+	})
+
 	t.Run("null content removed", func(t *testing.T) {
 		out, drop := SanitizeChunk([]byte(`{"choices":[{"delta":{"content":null,"reasoning_content":"r"}}]}`))
 		if drop {

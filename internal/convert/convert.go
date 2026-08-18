@@ -1338,15 +1338,26 @@ func sanitizeChunk(chunk map[string]any, clean map[string]any) map[string]any {
 				delta[k] = v
 			}
 		}
+		var reasoningStr string
 		if rc, ok := delta["reasoning_content"]; ok {
 			delete(delta, "reasoning_content")
 			if s, isStr := rc.(string); isStr {
-				delta["reasoning_content"] = s
-				// Issue #44: fold reasoning into content as <think> text for
-				// clients that don't render a reasoning channel. reasoning_details
-				// is never folded.
-				foldReasoningIntoContent(delta, s)
+				reasoningStr = s
 			}
+		}
+		if r, ok := delta["reasoning"]; ok {
+			delete(delta, "reasoning")
+			if s, isStr := r.(string); isStr && reasoningStr == "" {
+				reasoningStr = s
+			}
+		}
+		if reasoningStr != "" {
+			delta["reasoning_content"] = reasoningStr
+			delta["reasoning"] = reasoningStr
+			// Issue #44: fold reasoning into content as <think> text for
+			// clients that don't render a reasoning channel. reasoning_details
+			// is never folded.
+			foldReasoningIntoContent(delta, reasoningStr)
 		}
 		if v, ok := delta["content"]; ok && v == nil {
 			delete(delta, "content")
@@ -1431,10 +1442,22 @@ func needsSanitize(chunk map[string]any) bool {
 		if content, has := delta["content"]; has && content == nil {
 			return true // null content removed
 		}
+		hasRC := false
 		if rc, has := delta["reasoning_content"]; has {
 			if _, isStr := rc.(string); !isStr {
 				return true // non-string reasoning_content dropped
 			}
+			hasRC = true
+		}
+		hasR := false
+		if r, has := delta["reasoning"]; has {
+			if _, isStr := r.(string); !isStr {
+				return true // non-string reasoning dropped
+			}
+			hasR = true
+		}
+		if hasRC != hasR {
+			return true // normalize to both reasoning_content and reasoning
 		}
 		if _, ok := c["finish_reason"]; !ok {
 			return true // explicit null finish_reason injected
@@ -1597,8 +1620,10 @@ func (a *Accumulator) accumulate(chunk map[string]any) {
 		if content, ok := delta["content"].(string); ok {
 			a.contentParts = append(a.contentParts, content)
 		}
-		if rc, ok := delta["reasoning_content"].(string); ok {
+		if rc, ok := delta["reasoning_content"].(string); ok && rc != "" {
 			a.reasoningParts = append(a.reasoningParts, rc)
+		} else if r, ok := delta["reasoning"].(string); ok && r != "" {
+			a.reasoningParts = append(a.reasoningParts, r)
 		}
 		for _, tc := range toolCallsOf(delta) {
 			a.addToolCall(tc)
