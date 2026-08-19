@@ -58,6 +58,9 @@ HANDOFF.md
 docs/*
 !docs/guides/
 
+# ── Go vendored modules ──
+vendor/
+
 # ── dev study docs (local only — reverse-engineering notes, NOT public) ──
 docs/guides/freebuff-cli-internals.md
 docs/guides/anti-ban-gap-analysis.md
